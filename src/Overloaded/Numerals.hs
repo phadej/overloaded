@@ -46,7 +46,6 @@ class FromNatural (n :: Nat) a where
 instance KnownNat n => FromNatural n Natural where
     fromNatural = natVal (Proxy :: Proxy n)
 
-
 type family IsWord8 (n :: Nat) (b :: Bool) :: Constraint where
     IsWord8 n 'True  = ()
     IsWord8 n 'False = TypeError ('Text "Overflowing Word8 " ':<>: 'ShowType n)

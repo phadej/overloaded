@@ -44,7 +44,11 @@ pluginImpl args env gr = do
         _ | "Numerals" `elem` args -> transformNumerals dflags names env gr1
         _ -> return gr1
 
-    return (env, gr2)
+    gr3 <- case () of
+        _ | "Lists" `elem` args -> transformLists dflags names env gr1
+        _ -> return gr2
+
+    return (env, gr3)
 
 -------------------------------------------------------------------------------
 -- OverloadedStrings
@@ -108,6 +112,26 @@ transformNumerals _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform')
         return expr
 
 -------------------------------------------------------------------------------
+-- OverloadedLists
+-------------------------------------------------------------------------------
+
+transformLists
+    :: GHC.DynFlags
+    -> Names
+    -> TcRnTypes.TcGblEnv
+    -> HsGroup GhcRn
+    -> TcRnTypes.TcM (HsGroup GhcRn)
+transformLists _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
+    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
+    transform' e@(L l (ExplicitList _ Nothing xs)) = do
+        warn _dflags l $ GHC.ppr xs
+        return e
+
+    -- otherwise: leave intact
+    transform' expr =
+        return expr
+
+-------------------------------------------------------------------------------
 -- ModuleNames
 -------------------------------------------------------------------------------
 
@@ -120,6 +144,9 @@ overloadedSymbolsMN =  GHC.mkModuleName "Overloaded.Symbols"
 overloadedNumeralsMN :: GHC.ModuleName
 overloadedNumeralsMN =  GHC.mkModuleName "Overloaded.Numerals"
 
+overloadedListsMN :: GHC.ModuleName
+overloadedListsMN =  GHC.mkModuleName "Overloaded.Lists"
+
 -------------------------------------------------------------------------------
 -- Names
 -------------------------------------------------------------------------------
@@ -128,26 +155,28 @@ data Names = Names
     { fromStringName  :: GHC.Name
     , fromSymbolName  :: GHC.Name
     , fromNumeralName :: GHC.Name
+    , nilName         :: GHC.Name
+    , consName        :: GHC.Name
     }
 
 getNames :: TcRnTypes.TcM Names
 getNames = do
     env <- TcM.getTopEnv
 
-    GHC.Found _ md <- liftIO $ Finder.findImportedModule env dataStringMN Nothing
-    name <- IfaceEnv.lookupOrig md (GHC.mkVarOcc "fromString")
+    fromStringName  <- lookupVar env dataStringMN "fromString"
+    fromSymbolName  <- lookupVar env overloadedSymbolsMN "fromSymbol"
+    fromNumeralName <- lookupVar env overloadedNumeralsMN "fromNatural"
+    nilName         <- lookupVar env overloadedListsMN "nil"
+    consName        <- lookupVar env overloadedListsMN "cons"
 
-    GHC.Found _ md' <- liftIO $ Finder.findImportedModule env overloadedSymbolsMN Nothing
-    name' <- IfaceEnv.lookupOrig md' (GHC.mkVarOcc "fromSymbol")
+    return Names {..}
+  where
+    lookupVar env mn vn = do
+        res <-  liftIO $ Finder.findImportedModule env mn Nothing
+        case res of
+            GHC.Found _ md -> IfaceEnv.lookupOrig md (GHC.mkVarOcc vn)
+            _              -> fail "panic!"
 
-    GHC.Found _ md'' <- liftIO $ Finder.findImportedModule env overloadedNumeralsMN Nothing
-    name'' <- IfaceEnv.lookupOrig md'' (GHC.mkVarOcc "fromNatural")
-
-    return Names
-        { fromStringName = name
-        , fromSymbolName = name'
-        , fromNumeralName = name''
-        }
 
 -------------------------------------------------------------------------------
 -- diagnostics
