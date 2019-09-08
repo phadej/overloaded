@@ -90,7 +90,7 @@ dataStringMN :: GHC.ModuleName
 dataStringMN =  GHC.mkModuleName "Data.String"
 
 overloadedStringsMN :: GHC.ModuleName
-overloadedStringsMN =  GHC.mkModuleName "Overloaded.Strings"
+overloadedStringsMN =  GHC.mkModuleName "Overloaded.Symbols"
 
 -------------------------------------------------------------------------------
 -- Names
