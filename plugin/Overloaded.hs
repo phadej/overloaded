@@ -33,14 +33,18 @@ pluginImpl args env gr = do
     dflags <- GHC.getDynFlags
     debug $ GHC.showPpr dflags gr
     names <- getNames
-    when (null args) $ 
+    when (null args) $
         warn dflags noSrcSpan $ GHC.text "No overloaded features enabled"
-    gr' <- case () of
+    gr1 <- case () of
         _ | "Symbols" `elem` args -> transformSymbols dflags names env gr
         _ | "Strings" `elem` args -> transformStrings dflags names env gr
-
         _ -> return gr
-    return (env, gr')
+
+    gr2 <- case () of
+        _ | "Numerals" `elem` args -> transformNumerals dflags names env gr1
+        _ -> return gr1
+
+    return (env, gr2)
 
 -------------------------------------------------------------------------------
 -- OverloadedStrings
@@ -83,22 +87,47 @@ transformSymbols _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') 
         return expr
 
 -------------------------------------------------------------------------------
+-- OverloadedNumerals
+-------------------------------------------------------------------------------
+
+transformNumerals
+    :: GHC.DynFlags
+    -> Names
+    -> TcRnTypes.TcGblEnv
+    -> HsGroup GhcRn
+    -> TcRnTypes.TcM (HsGroup GhcRn)
+transformNumerals _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
+    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
+    transform' (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _))) | n == False, i >= 0 = do
+        let name' = (L l (HsVar noExt (L l fromNumeralName)))
+        let inner = L l $ HsAppType (HsWC [] (L l (HsTyLit noExt (HsNumTy GHC.NoSourceText i)))) name'
+        return inner
+
+    -- otherwise: leave intact
+    transform' expr =
+        return expr
+
+-------------------------------------------------------------------------------
 -- ModuleNames
 -------------------------------------------------------------------------------
 
 dataStringMN :: GHC.ModuleName
 dataStringMN =  GHC.mkModuleName "Data.String"
 
-overloadedStringsMN :: GHC.ModuleName
-overloadedStringsMN =  GHC.mkModuleName "Overloaded.Symbols"
+overloadedSymbolsMN :: GHC.ModuleName
+overloadedSymbolsMN =  GHC.mkModuleName "Overloaded.Symbols"
+
+overloadedNumeralsMN :: GHC.ModuleName
+overloadedNumeralsMN =  GHC.mkModuleName "Overloaded.Numerals"
 
 -------------------------------------------------------------------------------
 -- Names
 -------------------------------------------------------------------------------
 
 data Names = Names
-    { fromStringName :: GHC.Name
-    , fromSymbolName :: GHC.Name
+    { fromStringName  :: GHC.Name
+    , fromSymbolName  :: GHC.Name
+    , fromNumeralName :: GHC.Name
     }
 
 getNames :: TcRnTypes.TcM Names
@@ -108,12 +137,16 @@ getNames = do
     GHC.Found _ md <- liftIO $ Finder.findImportedModule env dataStringMN Nothing
     name <- IfaceEnv.lookupOrig md (GHC.mkVarOcc "fromString")
 
-    GHC.Found _ md' <- liftIO $ Finder.findImportedModule env overloadedStringsMN Nothing
+    GHC.Found _ md' <- liftIO $ Finder.findImportedModule env overloadedSymbolsMN Nothing
     name' <- IfaceEnv.lookupOrig md' (GHC.mkVarOcc "fromSymbol")
+
+    GHC.Found _ md'' <- liftIO $ Finder.findImportedModule env overloadedNumeralsMN Nothing
+    name'' <- IfaceEnv.lookupOrig md'' (GHC.mkVarOcc "fromNatural")
 
     return Names
         { fromStringName = name
         , fromSymbolName = name'
+        , fromNumeralName = name''
         }
 
 -------------------------------------------------------------------------------

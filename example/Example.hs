@@ -1,5 +1,5 @@
 -- {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols #-}
+{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols -fplugin-opt=Overloaded:Numerals #-}
 
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}

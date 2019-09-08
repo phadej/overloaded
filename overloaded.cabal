@@ -34,6 +34,7 @@ library
   ghc-options:      -Wall
   exposed-modules:
     Overloaded
+    Overloaded.Numerals
     Overloaded.Symbols
 
   -- GHC boot dependencies
