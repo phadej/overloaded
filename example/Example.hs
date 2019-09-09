@@ -1,5 +1,6 @@
+{-# LANGUAGE OverloadedLabels      #-}
 -- {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols:Numerals:Lists:If #-}
+{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols:Numerals:Lists:If:Labels=Overloaded.Symbols.fromSymbol #-}
 
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -10,6 +11,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module Main (main) where
 
@@ -24,14 +26,13 @@ import           Data.Type.Equality
 import qualified Data.Type.Nat          as N
 import           Data.Vec.Lazy          (Vec (..))
 import           GHC.Exts               (Constraint)
-import           GHC.TypeLits           (ErrorMessage (..), TypeError)
-import           GHC.TypeLits
+import           GHC.OverloadedLabels   (IsLabel (..))
+import           GHC.TypeLits           (ErrorMessage (..), TypeError, KnownSymbol, KnownNat, symbolVal, Symbol)
 import qualified GHC.TypeNats           as Nat
 import           Numeric.Natural
 import           Test.HUnit             ((@?=))
 
-import Overloaded.Numerals
-import Overloaded.Symbols
+import Overloaded
 
 -- non-empty string
 newtype NES = NES String deriving (Eq, Show)
@@ -39,29 +40,22 @@ newtype NES = NES String deriving (Eq, Show)
 instance IsString NES where
     fromString = NES
 
-instance (KnownSymbol s, a ~ Char, (s == "") ~ 'False) => FromSymbol s NES where
+type family NotEmptySymbol (s :: Symbol) :: Constraint where
+    NotEmptySymbol "" = TypeError ('ShowType NES ':<>: 'Text " should not be empty")
+    NotEmptySymbol s  = ()
+
+instance (KnownSymbol s, NotEmptySymbol s) => FromSymbol s NES where
     fromSymbol = NES $ symbolVal (Proxy :: Proxy s)
+
+-- We don't need this instance, as we have configured the plugin
+-- instance (KnownSymbol s, NotEmptySymbol s) => IsLabel s NES where
+--     fromLabel = fromSymbol @s
 
 -- | Orphan instance for natural
 instance (KnownNat (ReadNat s)) => FromSymbol s Natural where
     fromSymbol = Nat.natVal (Proxy :: Proxy (ReadNat s))
 
-type family IsLess (n :: N.Nat) (m :: N.Nat) (p :: Nat) (q :: Nat) :: Constraint where
-    IsLess 'N.Z     ('N.S m) p q = ()
-    IsLess ('N.S n) ('N.S m) p q = IsLess n m p q
-    IsLess ('N.S n) 'N.Z     p q = TypeError ('ShowType p ':<>: 'Text " is not less than " ':<>: 'ShowType q)
 
-class FinFromNatural (n :: N.Nat) (m :: N.Nat) where
-    finFromNatural :: Proxy n -> Fin m
-
-instance FinFromNatural 'N.Z ('N.S m) where
-    finFromNatural _ = FZ
-
-instance FinFromNatural n m => FinFromNatural ('N.S n) ('N.S m) where
-    finFromNatural _ = FS (finFromNatural (Proxy :: Proxy n))
-
-instance (FinFromNatural (N.FromGHC n) m, IsLess (N.FromGHC n) m n (N.ToGHC m)) => FromNatural n (Fin m) where
-    fromNatural = finFromNatural (Proxy :: Proxy (N.FromGHC n))
 
 main :: IO ()
 main = do
@@ -69,6 +63,10 @@ main = do
     let lhs = "foo"
     print lhs
     lhs @?= NES "foo"
+
+    let lhs' = #foo
+    print lhs
+    lhs' @?= NES "foo"
 
     -- ByteString
     let bs = "foo" -- try non-ASCII

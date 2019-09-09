@@ -10,9 +10,26 @@
 {-# LANGUAGE UndecidableInstances   #-}
 
 -- | Another way to desugar overloaded numeric literals. See 'FromNatural'.
-module Overloaded.Lists where
+--
+-- An explicit list expression, e.g. @[1, True]@ is desugared to
+--
+-- @
+-- cons 1 (cons True nil)
+-- @
+--
+-- Enabled with:
+--
+-- @
+-- {-\# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Lists #-}
+-- @
+--
+module Overloaded.Lists (
+    Nil (..),
+    Cons (..),
+  ) where
 
 import Data.SOP.NP (NP (..), POP (..))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Coerce (coerce)
 
 import qualified Data.Vec.Lazy as Vec
@@ -22,10 +39,16 @@ import qualified Data.Type.Nat as N
 -- Classes
 -------------------------------------------------------------------------------
 
+-- | Class for nil, @[]@
+--
+-- See test-suite for ways to define instances for 'Data.Map.Map'.
+-- There are at-least two-ways.
+-- 
 class Nil a where
     nil :: a
 
-class Cons x ys zs | zs -> x ys, x ys -> zs where
+-- | Class for Cons ':'.
+class Cons x ys zs | zs -> x ys where
     cons :: x -> ys -> zs
 
 -------------------------------------------------------------------------------
@@ -37,6 +60,9 @@ instance Nil [a] where
 
 instance Cons a [a] [a] where
     cons = (:)
+
+instance Cons a [a] (NonEmpty a) where
+    cons = (:|)
 
 -------------------------------------------------------------------------------
 -- vec

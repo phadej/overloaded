@@ -10,7 +10,9 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 -- | Another way to desugar overloaded string literals. See 'FromSymbol'.
-module Overloaded.Symbols where
+module Overloaded.Symbols (
+    FromSymbol (..),
+  ) where
 
 import Data.Proxy        (Proxy (..))
 import Data.String       (fromString)
@@ -37,8 +39,6 @@ import qualified Data.Text.Lazy       as TL
 -- @
 -- {-\# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols #-}
 -- @
---
--- One can do type-level computations with this.
 --
 class FromSymbol (s :: Symbol) a where
     fromSymbol :: a

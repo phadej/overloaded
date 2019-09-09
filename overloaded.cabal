@@ -22,7 +22,7 @@ license-file:  LICENSE
 author:        Oleg Grenrus <oleg.grenrus@iki.fi>
 maintainer:    Oleg Grenrus <oleg.grenrus@iki.fi>
 category:      Plugin
-tested-with:   GHC ==8.6.5
+tested-with:   GHC ==8.6.5 || ==8.8.1
 
 source-repository head
   type:     git
@@ -30,31 +30,34 @@ source-repository head
 
 library
   default-language: Haskell2010
-  hs-source-dirs:   plugin src
+  hs-source-dirs:   src
   ghc-options:      -Wall
   exposed-modules:
     Overloaded
+    Overloaded.Chars
     Overloaded.If
     Overloaded.Lists
+    Overloaded.Naturals
     Overloaded.Numerals
+    Overloaded.Plugin
     Overloaded.Symbols
 
   -- GHC boot dependencies
   build-depends:
-    , base        ^>=4.12.0.0
+    , base        ^>=4.12.0.0 || ^>=4.13.0.0
     , bytestring  ^>=0.10.8.2
-    , containers
-    , ghc         ^>=8.6
+    , containers  ^>=0.6.0.1
+    , ghc         ^>=8.6 || ^>=8.8
     , text        ^>=1.2.3.0
 
   -- other dependencies
   build-depends:
-    , fin
-    , split ^>= 0.2.3.3
-    , sop-core
+    , fin       ^>=0.1
+    , sop-core  ^>=0.5.0.0
+    , split     ^>=0.2.3.3
     , syb       ^>=0.7.1
     , symbols   ^>=0.2.0.3
-    , vec
+    , vec       ^>=0.1.1.1
 
 test-suite example
   default-language: Haskell2010
@@ -77,3 +80,38 @@ test-suite example
     , HUnit        ^>=1.6.0.0
     , tasty
     , tasty-hunit
+
+test-suite test
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Tests.hs
+  other-modules:
+    Overloaded.Test.Chars
+    Overloaded.Test.If
+    Overloaded.Test.Labels
+    Overloaded.Test.Labels.GenericLens
+    Overloaded.Test.Lists
+    Overloaded.Test.Naturals
+    Overloaded.Test.Numerals
+    Overloaded.Test.Strings
+    Overloaded.Test.Symbols
+
+  -- inherited dependencies
+  build-depends:
+    , base
+    , bytestring
+    , containers
+    , fin
+    , overloaded
+    , sop-core
+    , symbols
+    , text
+    , vec
+
+  -- test dependencies
+  build-depends:
+    , generic-lens  ^>=1.2.0.0
+    , lens          ^>=4.18
+    , tasty         ^>=1.2.3
+    , tasty-hunit   ^>=0.10.0.2
