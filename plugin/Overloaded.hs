@@ -1,8 +1,10 @@
 {-# LANGUAGE RecordWildCards #-}
 module Overloaded (plugin) where
 
-import Control.Monad          (when)
+import Control.Applicative    ((<|>))
+import Control.Monad          (foldM, when)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.List              (foldl')
 import Data.List.Split        (splitOn)
 
 import qualified Data.Generics as SYB
@@ -37,8 +39,11 @@ pluginImpl args' env gr = do
     debug $ show args
     debug $ GHC.showPpr dflags gr
     names <- getNames
-    when (null args) $
-        warn dflags noSrcSpan $ GHC.text "No overloaded features enabled"
+    opts@Options {..} <- parseArgs dflags args
+    when (opts == defaultOptions) $
+        warn dflags noSrcSpan $ GHC.text "No Overloaded features enabled"
+
+{-
     gr1 <- case () of
         _ | "Symbols" `elem` args -> transformSymbols dflags names env gr
         _ | "Strings" `elem` args -> transformStrings dflags names env gr
@@ -51,131 +56,177 @@ pluginImpl args' env gr = do
     gr3 <- case () of
         _ | "Lists" `elem` args -> transformLists dflags names env gr2
         _ -> return gr2
+-}
 
-    gr4 <- case () of
-        _ | "If" `elem` args -> transformIf dflags names env gr3
-        _ -> return gr3
+    let transformNoOp :: LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+        transformNoOp _ = Nothing
 
-    return (env, gr4)
+        trStr = case optStrings of
+            Just Str -> transformStrings names
+            Just Sym -> transformSymbols names
+            Nothing  -> transformNoOp
+
+        trNum | optNumerals = transformNumerals names
+              | otherwise   = transformNoOp
+
+        trLists | optLists  = transformLists names
+                | otherwise = transformNoOp
+
+        trIf | optIf     = transformIf names
+             | otherwise = transformNoOp
+
+        tr = trStr /\ trNum /\ trLists /\ trIf
+
+    gr' <- transform dflags tr gr
+
+    return (env, gr')
   where
     args = concatMap (splitOn ":") args'
+
+    (/\) :: (a -> Maybe b) -> (a -> Maybe b) -> a -> Maybe b
+    f /\ g = \x -> f x <|> g x
+
+    infixr 9 /\
+
+-------------------------------------------------------------------------------
+-- Args parasing
+-------------------------------------------------------------------------------
+
+parseArgs :: GHC.DynFlags -> [String] -> TcRnTypes.TcM Options
+parseArgs dflags = foldM go defaultOptions where
+    go opts "Strings" = do
+        when (optStrings opts == Just Sym) $ warn dflags noSrcSpan $
+            GHC.text "Overloaded:Strings and Overloaded:Symbols enabled"
+            GHC.$$
+            GHC.text "picking Overloaded:Strings"
+
+        return $ opts { optStrings = Just Str }
+
+    go opts "Symbols" = do
+        when (optStrings opts == Just Sym) $ warn dflags noSrcSpan $
+            GHC.text "Overloaded:Strings and Overloaded:Symbols enabled"
+            GHC.$$
+            GHC.text "picking Overloaded:Symbols"
+
+        return $ opts { optStrings = Just Sym }
+
+    go opts "Numerals" = return $ opts { optNumerals = True }
+    go opts "Lists"    = return $ opts { optLists = True }
+    go opts "If"       = return $ opts { optIf = True }
+
+    go opts s = do
+        warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
+        return opts
+
+data Options = Options
+    { optStrings  :: Maybe Str
+    , optNumerals :: Bool
+    , optLists    :: Bool
+    , optIf       :: Bool
+    }
+  deriving (Eq, Show)
+
+defaultOptions :: Options
+defaultOptions = Options
+    { optStrings  = Nothing
+    , optNumerals = False
+    , optLists    = False
+    , optIf       = False
+    }
+
+data Str = Str | Sym deriving (Eq, Show)
 
 -------------------------------------------------------------------------------
 -- OverloadedStrings
 -------------------------------------------------------------------------------
 
-transformStrings
-    :: GHC.DynFlags
-    -> Names
-    -> TcRnTypes.TcGblEnv
-    -> HsGroup GhcRn
-    -> TcRnTypes.TcM (HsGroup GhcRn)
-transformStrings _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' e@(L l (HsLit _ (HsString _ _fs))) = do
-        return $ L l $ HsApp noExt (L l (HsVar noExt (L l fromStringName))) e
+transformStrings :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) =
+    Just $ hsApps l (hsVar l fromStringName) [e]
 
-    -- otherwise: leave intact
-    transform' expr =
-        return expr
+transformStrings _ _ = Nothing
 
 -------------------------------------------------------------------------------
 -- OverloadedSymbols
 -------------------------------------------------------------------------------
 
-transformSymbols
-    :: GHC.DynFlags
-    -> Names
-    -> TcRnTypes.TcGblEnv
-    -> HsGroup GhcRn
-    -> TcRnTypes.TcM (HsGroup GhcRn)
-transformSymbols _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' (L l (HsLit _ (HsString _ fs))) = do
-        let name' = (L l (HsVar noExt (L l fromSymbolName)))
-        let inner = L l $ HsAppType (HsWC [] (L l (HsTyLit noExt (HsStrTy GHC.NoSourceText fs)))) name'
-        return inner
+transformSymbols :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformSymbols Names {..} (L l (HsLit _ (HsString _ fs))) = do
+    let name' = hsVar l fromSymbolName
+    let inner = L l $ HsAppType (HsWC [] (L l (HsTyLit noExt (HsStrTy GHC.NoSourceText fs)))) name'
+    Just inner
 
-    -- otherwise: leave intact
-    transform' expr =
-        return expr
+transformSymbols _ _ = Nothing
 
 -------------------------------------------------------------------------------
 -- OverloadedNumerals
 -------------------------------------------------------------------------------
 
-transformNumerals
-    :: GHC.DynFlags
-    -> Names
-    -> TcRnTypes.TcGblEnv
-    -> HsGroup GhcRn
-    -> TcRnTypes.TcM (HsGroup GhcRn)
-transformNumerals _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _))) | n == False, i >= 0 = do
-        let name' = L l $ HsVar noExt $ L l fromNumeralName
+transformNumerals :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
+    | not n, i >= 0 = do
+        let name' = hsVar l fromNumeralName
         let inner = L l $ HsAppType (HsWC [] (L l (HsTyLit noExt (HsNumTy GHC.NoSourceText i)))) name'
-        return inner
+        Just inner
 
-    -- otherwise: leave intact
-    transform' expr =
-        return expr
+transformNumerals _ _ = Nothing
 
 -------------------------------------------------------------------------------
 -- OverloadedLists
 -------------------------------------------------------------------------------
 
-transformLists
-    :: GHC.DynFlags
-    -> Names
-    -> TcRnTypes.TcGblEnv
-    -> HsGroup GhcRn
-    -> TcRnTypes.TcM (HsGroup GhcRn)
-transformLists _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' (L l (ExplicitList _ Nothing xs)) =
-        return $ foldr (cons' l) (nil' l) xs
+transformLists :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformLists Names {..} (L l (ExplicitList _ Nothing xs)) =
+    Just $ foldr cons' nil' xs
+  where
+    cons' :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+    cons' y ys = hsApps l (hsVar l consName) [y, ys]
+
+    nil' :: LHsExpr GhcRn
+    nil' = hsVar l nilName
 
     -- otherwise: leave intact
-    transform' expr =
-        return expr
-
-    cons' :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
-    cons' l x xs = val3
-      where
-        val3 = L l $ HsApp noExt val2 xs
-        val2 = L l $ HsApp noExt val1 x
-        val1 = L l $ HsVar noExt $ L l consName
-
-    nil' :: SrcSpan -> LHsExpr GhcRn
-    nil' l = L l $ HsVar noExt $ L l nilName
+transformLists _ _ = Nothing
 
 -------------------------------------------------------------------------------
 -- OverloadedIf
 -------------------------------------------------------------------------------
 
-transformIf
+transformIf :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformIf Names {..} (L l (HsIf _ _ co th el)) = Just val4 where
+    val4 = L l $ HsApp noExt val3 el
+    val3 = L l $ HsApp noExt val2 th
+    val2 = L l $ HsApp noExt val1 co
+    val1 = L l $ HsVar noExt $ L l ifteName
+transformIf _ _ = Nothing
+
+-------------------------------------------------------------------------------
+-- Transform
+-------------------------------------------------------------------------------
+
+transform
     :: GHC.DynFlags
-    -> Names
-    -> TcRnTypes.TcGblEnv
+    -> (LHsExpr GhcRn -> Maybe (LHsExpr GhcRn))
     -> HsGroup GhcRn
     -> TcRnTypes.TcM (HsGroup GhcRn)
-transformIf _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
+transform _dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' (L l (HsIf _ _ co th el)) = do
-        return $ ifte' l co th el
+    transform' e = do
+        return $ case f e of
+            Just e' -> e'
+            Nothing -> e
 
-    -- otherwise: leave intact
-    transform' expr =
-        return expr
+-------------------------------------------------------------------------------
+-- Constructors
+-------------------------------------------------------------------------------
 
-    ifte' :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
-    ifte' l co th el = val4
-      where
-        val4 = L l $ HsApp noExt val3 el
-        val3 = L l $ HsApp noExt val2 th
-        val2 = L l $ HsApp noExt val1 co
-        val1 = L l $ HsVar noExt $ L l ifteName
+hsVar :: SrcSpan -> GHC.Name -> LHsExpr GhcRn
+hsVar l n = L l (HsVar noExt (L l n))
+
+hsApps :: SrcSpan -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
+hsApps l = foldl' app where
+    app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+    app f x = L l (HsApp noExt f x)
 
 -------------------------------------------------------------------------------
 -- ModuleNames
