@@ -1,2 +1,5 @@
 all :
-	cabal run example
+	cabal run test
+
+haddock :
+	cabal haddock --haddock-hyperlink-source
