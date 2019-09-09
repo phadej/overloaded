@@ -103,7 +103,7 @@ transformNumerals
 transformNumerals _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
     transform' (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _))) | n == False, i >= 0 = do
-        let name' = (L l (HsVar noExt (L l fromNumeralName)))
+        let name' = L l $ HsVar noExt $ L l fromNumeralName
         let inner = L l $ HsAppType (HsWC [] (L l (HsTyLit noExt (HsNumTy GHC.NoSourceText i)))) name'
         return inner
 
@@ -123,13 +123,22 @@ transformLists
     -> TcRnTypes.TcM (HsGroup GhcRn)
 transformLists _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' e@(L l (ExplicitList _ Nothing xs)) = do
-        warn _dflags l $ GHC.ppr xs
-        return e
+    transform' e@(L l (ExplicitList _ Nothing xs)) =
+        return $ foldr (cons' l) (nil' l) xs
 
     -- otherwise: leave intact
     transform' expr =
         return expr
+
+    cons' :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+    cons' l x xs = val3
+      where
+        val3 = L l $ HsApp noExt val2 xs
+        val2 = L l $ HsApp noExt val1 x 
+        val1 = L l $ HsVar noExt $ L l consName
+
+    nil' :: SrcSpan -> LHsExpr GhcRn
+    nil' l = L l $ HsVar noExt $ L l nilName
 
 -------------------------------------------------------------------------------
 -- ModuleNames

@@ -5,20 +5,23 @@
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 -- | Another way to desugar overloaded numeric literals. See 'FromNatural'.
-module Overloaded.Numerals where
+module Overloaded.Numerals (
+    FromNatural (..),
+    defaultFromNatural,
+    ) where
 
 import Data.Proxy      (Proxy (..))
+import Data.Word       (Word16, Word32, Word64, Word8)
 import GHC.Exts        (Constraint)
-import GHC.TypeLits    (ErrorMessage (..), TypeError)
-import GHC.TypeNats    (KnownNat, Nat, natVal, type (<=?))
+import GHC.TypeLits    (ErrorMessage (..), Symbol, TypeError)
+import GHC.TypeNats    (type (<=?), KnownNat, Nat, natVal)
 import Numeric.Natural (Natural)
-
-import Data.Word (Word8)
 
 -- | Another way to desugar numerals.
 --
@@ -39,6 +42,18 @@ import Data.Word (Word8)
 class FromNatural (n :: Nat) a where
     fromNatural :: a
 
+-- | Default implementation of 'fromNatural'. 
+--
+-- Usage example:
+--
+-- @
+-- instance (KnownNat n, ...) => FromNatural n MyType where
+--     fromNatural = defaultFromNatural @n
+-- @
+--
+defaultFromNatural :: forall n a. (KnownNat n, Integral a) => a
+defaultFromNatural = fromIntegral $ natVal (Proxy :: Proxy n)
+
 -------------------------------------------------------------------------------
 -- base
 -------------------------------------------------------------------------------
@@ -46,9 +61,30 @@ class FromNatural (n :: Nat) a where
 instance KnownNat n => FromNatural n Natural where
     fromNatural = natVal (Proxy :: Proxy n)
 
-type family IsWord8 (n :: Nat) (b :: Bool) :: Constraint where
-    IsWord8 n 'True  = ()
-    IsWord8 n 'False = TypeError ('Text "Overflowing Word8 " ':<>: 'ShowType n)
+instance KnownNat n => FromNatural n Integer where
+    fromNatural = defaultFromNatural @n
 
-instance (KnownNat n, IsWord8 n (n <=? 255)) => FromNatural n Word8 where
-    fromNatural = fromIntegral $ natVal (Proxy :: Proxy n)
+-- | TODO: currently no range check
+instance KnownNat n => FromNatural n Int where
+    fromNatural = defaultFromNatural @n
+
+-------------------------------------------------------------------------------
+-- Word
+-------------------------------------------------------------------------------
+
+type family OverflowCheck (n :: Nat) (t :: Symbol) (b :: Bool) :: Constraint where
+    OverflowCheck n t 'True  = ()
+    OverflowCheck n t 'False = TypeError
+        ('Text "Overflowing " ':<>: 'Text t ':<>: 'Text ": " ':<>: 'ShowType n)
+
+instance (KnownNat n, OverflowCheck n "Word8" (n <=? 0xff)) => FromNatural n Word8 where
+    fromNatural = defaultFromNatural @n
+
+instance (KnownNat n, OverflowCheck n "Word8" (n <=? 0xffff)) => FromNatural n Word16 where
+    fromNatural = defaultFromNatural @n
+
+instance (KnownNat n, OverflowCheck n "Word8" (n <=? 0xffffffff)) => FromNatural n Word32 where
+    fromNatural = defaultFromNatural @n
+
+instance (KnownNat n, OverflowCheck n "Word8" (n <=? 0xffffffffffffffff)) => FromNatural n Word64 where
+    fromNatural = defaultFromNatural @n
