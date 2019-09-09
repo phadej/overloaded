@@ -1,5 +1,5 @@
 -- {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols -fplugin-opt=Overloaded:Numerals -fplugin-opt=Overloaded:Lists #-}
+{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols:Numerals:Lists:If #-}
 
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -13,19 +13,22 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module Main (main) where
 
-import qualified Data.ByteString    as BS
-import           Data.Fin           (Fin (..))
-import           Data.Proxy         (Proxy (..))
-import           Data.String        (IsString (..))
-import           Data.Symbol.Ascii  (ReadNat)
+import qualified Data.ByteString        as BS
+import           Data.Fin               (Fin (..))
+import           Data.Proxy             (Proxy (..))
+import           Data.SOP.BasicFunctors (I (..))
+import           Data.SOP.NP            (NP (..), POP (..))
+import           Data.String            (IsString (..))
+import           Data.Symbol.Ascii      (ReadNat)
 import           Data.Type.Equality
-import qualified Data.Type.Nat      as N
-import           GHC.Exts           (Constraint)
-import           GHC.TypeLits       (ErrorMessage (..), TypeError)
+import qualified Data.Type.Nat          as N
+import           Data.Vec.Lazy          (Vec (..))
+import           GHC.Exts               (Constraint)
+import           GHC.TypeLits           (ErrorMessage (..), TypeError)
 import           GHC.TypeLits
-import qualified GHC.TypeNats       as Nat
+import qualified GHC.TypeNats           as Nat
 import           Numeric.Natural
-import           Test.HUnit         ((@?=))
+import           Test.HUnit             ((@?=))
 
 import Overloaded.Numerals
 import Overloaded.Symbols
@@ -76,7 +79,35 @@ main = do
     print n
     1 + n @?= (3 :: Natural)
 
+    -- fin: Fin
     let f :: Fin (N.FromGHC 5)
         f = 2
 
     print f
+    f @?= FS (FS FZ)
+
+    -- vec: Vec
+    let v :: Vec N.Nat3 Int
+        v = [1, 2, 3]
+
+    print v
+    v @?= 1 ::: 2 ::: 3 ::: VNil
+
+    -- sop-core: NP and POP
+    let np :: NP I '[Int, Bool, String]
+        np = [I 1, I True, I "YES"]
+
+    print np
+    np @?= I 1 :* I True :* I "YES" :* Nil
+
+    let pop :: POP I '[ '[Int, Bool], '[String] ]
+        pop = [[I 0, I False], [I "NO"]]
+
+    print pop
+    pop @?= POP ((I 0 :* I False :* Nil) :* (I "NO" :* Nil) :* Nil)
+
+    -- Overloaded:If
+    (if True then 'x' else 'y') @?= ('x' :: Char)
+    (if Just 'b' then 'x' else 'y') @?= ('x' :: Char)
+
+

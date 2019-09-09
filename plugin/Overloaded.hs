@@ -1,10 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
 module Overloaded (plugin) where
 
-import           Control.Monad          (when)
-import           Control.Monad.IO.Class (MonadIO (..))
-import qualified Data.Generics          as SYB
+import Control.Monad          (when)
+import Control.Monad.IO.Class (MonadIO (..))
+import Data.List.Split        (splitOn)
 
+import qualified Data.Generics as SYB
+
+-- GHC stuff
 import qualified ErrUtils   as Err
 import qualified Finder
 import qualified GhcPlugins as GHC
@@ -29,8 +32,9 @@ pluginImpl
     -> TcRnTypes.TcGblEnv
     -> HsGroup GhcRn
     -> TcRnTypes.TcM (TcRnTypes.TcGblEnv, HsGroup GhcRn)
-pluginImpl args env gr = do
+pluginImpl args' env gr = do
     dflags <- GHC.getDynFlags
+    debug $ show args
     debug $ GHC.showPpr dflags gr
     names <- getNames
     when (null args) $
@@ -45,10 +49,16 @@ pluginImpl args env gr = do
         _ -> return gr1
 
     gr3 <- case () of
-        _ | "Lists" `elem` args -> transformLists dflags names env gr1
+        _ | "Lists" `elem` args -> transformLists dflags names env gr2
         _ -> return gr2
 
-    return (env, gr3)
+    gr4 <- case () of
+        _ | "If" `elem` args -> transformIf dflags names env gr3
+        _ -> return gr3
+
+    return (env, gr4)
+  where
+    args = concatMap (splitOn ":") args'
 
 -------------------------------------------------------------------------------
 -- OverloadedStrings
@@ -123,7 +133,7 @@ transformLists
     -> TcRnTypes.TcM (HsGroup GhcRn)
 transformLists _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' e@(L l (ExplicitList _ Nothing xs)) =
+    transform' (L l (ExplicitList _ Nothing xs)) =
         return $ foldr (cons' l) (nil' l) xs
 
     -- otherwise: leave intact
@@ -134,11 +144,38 @@ transformLists _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') wh
     cons' l x xs = val3
       where
         val3 = L l $ HsApp noExt val2 xs
-        val2 = L l $ HsApp noExt val1 x 
+        val2 = L l $ HsApp noExt val1 x
         val1 = L l $ HsVar noExt $ L l consName
 
     nil' :: SrcSpan -> LHsExpr GhcRn
     nil' l = L l $ HsVar noExt $ L l nilName
+
+-------------------------------------------------------------------------------
+-- OverloadedIf
+-------------------------------------------------------------------------------
+
+transformIf
+    :: GHC.DynFlags
+    -> Names
+    -> TcRnTypes.TcGblEnv
+    -> HsGroup GhcRn
+    -> TcRnTypes.TcM (HsGroup GhcRn)
+transformIf _dflags Names {..} _env = SYB.everywhereM (SYB.mkM transform') where
+    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
+    transform' (L l (HsIf _ _ co th el)) = do
+        return $ ifte' l co th el
+
+    -- otherwise: leave intact
+    transform' expr =
+        return expr
+
+    ifte' :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+    ifte' l co th el = val4
+      where
+        val4 = L l $ HsApp noExt val3 el
+        val3 = L l $ HsApp noExt val2 th
+        val2 = L l $ HsApp noExt val1 co
+        val1 = L l $ HsVar noExt $ L l ifteName
 
 -------------------------------------------------------------------------------
 -- ModuleNames
@@ -156,6 +193,9 @@ overloadedNumeralsMN =  GHC.mkModuleName "Overloaded.Numerals"
 overloadedListsMN :: GHC.ModuleName
 overloadedListsMN =  GHC.mkModuleName "Overloaded.Lists"
 
+overloadedIfMN :: GHC.ModuleName
+overloadedIfMN =  GHC.mkModuleName "Overloaded.If"
+
 -------------------------------------------------------------------------------
 -- Names
 -------------------------------------------------------------------------------
@@ -166,6 +206,7 @@ data Names = Names
     , fromNumeralName :: GHC.Name
     , nilName         :: GHC.Name
     , consName        :: GHC.Name
+    , ifteName        :: GHC.Name
     }
 
 getNames :: TcRnTypes.TcM Names
@@ -177,6 +218,7 @@ getNames = do
     fromNumeralName <- lookupVar env overloadedNumeralsMN "fromNatural"
     nilName         <- lookupVar env overloadedListsMN "nil"
     consName        <- lookupVar env overloadedListsMN "cons"
+    ifteName        <- lookupVar env overloadedIfMN "ifte"
 
     return Names {..}
   where
