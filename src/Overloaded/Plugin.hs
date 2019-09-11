@@ -16,7 +16,7 @@ import qualified Data.Generics as SYB
 import qualified ErrUtils   as Err
 import qualified Finder
 import qualified GhcPlugins as GHC
-import           HsSyn
+import           HsSyn as GHC
 import qualified IfaceEnv
 import           SrcLoc
 import qualified TcRnMonad  as TcM
@@ -88,7 +88,7 @@ pluginImpl args' env gr = do
     when (opts == defaultOptions) $
         warn dflags noSrcSpan $ GHC.text "No Overloaded features enabled"
 
-    let transformNoOp :: LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+    let transformNoOp :: a -> Maybe a
         transformNoOp _ = Nothing
 
     trStr <- case optStrings of
@@ -142,11 +142,27 @@ pluginImpl args' env gr = do
             n <- lookupVarName dflags topEnv vn
             return $ transformLabels $ names { fromLabelName = n }
 
-    let tr = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel
+    trTypeNats <- case optTypeNats of
+        Off          -> return transformNoOp
+        On Nothing   -> return $ transformTypeNats names
+        On (Just vn) -> do
+            n <- lookupTypeName dflags topEnv vn
+            return $ transformTypeNats $ names { fromTypeNatName = n }
 
-    gr' <- transform dflags tr gr
+    trTypeSymbols <- case optTypeSymbols of
+        Off          -> return transformNoOp
+        On Nothing   -> return $ transformTypeSymbols names
+        On (Just vn) -> do
+            n <- lookupTypeName dflags topEnv vn
+            return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    return (env, gr')
+    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel
+    let trT = trTypeNats /\ trTypeSymbols
+
+    gr' <- transformType dflags trT gr
+    gr'' <- transform dflags tr gr'
+
+    return (env, gr'')
   where
     args = concatMap (splitOn ":") args'
 
@@ -156,7 +172,7 @@ pluginImpl args' env gr = do
     infixr 9 /\ -- hello CPP
 
 -------------------------------------------------------------------------------
--- Args parasing
+-- Args parsing
 -------------------------------------------------------------------------------
 
 parseArgs :: GHC.DynFlags -> [String] -> TcRnTypes.TcM Options
@@ -213,6 +229,12 @@ parseArgs dflags = foldM go0 defaultOptions where
     go opts "Labels"   vns = do
         mvn <- oneName "Symbols" vns
         return $ opts { optLabels = On mvn }
+    go opts "TypeNats" vns = do
+        mvn <- oneName "TypeNats" vns
+        return $ opts { optTypeNats = On mvn }
+    go opts "TypeSymbols" vns = do
+        mvn <- oneName "TypeSymbols" vns
+        return $ opts { optTypeSymbols = On mvn }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
@@ -249,23 +271,27 @@ parseArgs dflags = foldM go0 defaultOptions where
         return (Just (VN (intercalate "." $ init ps) (last ps)))
 
 data Options = Options
-    { optStrings  :: StrSym
-    , optNumerals :: NumNat
-    , optChars    :: OnOff VarName
-    , optLists    :: OnOff (V2 VarName)
-    , optIf       :: OnOff VarName
-    , optLabels   :: OnOff VarName
+    { optStrings     :: StrSym
+    , optNumerals    :: NumNat
+    , optChars       :: OnOff VarName
+    , optLists       :: OnOff (V2 VarName)
+    , optIf          :: OnOff VarName
+    , optLabels      :: OnOff VarName
+    , optTypeNats    :: OnOff VarName
+    , optTypeSymbols :: OnOff VarName
     }
   deriving (Eq, Show)
 
 defaultOptions :: Options
 defaultOptions = Options
-    { optStrings  = NoStr
-    , optNumerals = NoNum
-    , optChars    = Off
-    , optLists    = Off
-    , optIf       = Off
-    , optLabels   = Off
+    { optStrings     = NoStr
+    , optNumerals    = NoNum
+    , optChars       = Off
+    , optLists       = Off
+    , optIf          = Off
+    , optLabels      = Off
+    , optTypeNats    = Off
+    , optTypeSymbols = Off
     }
 
 data StrSym
@@ -399,6 +425,26 @@ transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
 transformLabels _ _ = Nothing
 
 -------------------------------------------------------------------------------
+-- OverloadedTypeNats
+-------------------------------------------------------------------------------
+
+transformTypeNats :: Names -> LHsType GhcRn -> Maybe  (LHsType GhcRn)
+transformTypeNats Names {..} e@(L l (HsTyLit _ (HsNumTy _ _))) = do
+    let name' = L l $ HsTyVar noExt GHC.NotPromoted $ L l fromTypeNatName
+    Just $ L l $ HsAppTy noExt name' e
+transformTypeNats _ _ = Nothing
+
+-------------------------------------------------------------------------------
+-- OverloadedTypeSymbols
+-------------------------------------------------------------------------------
+
+transformTypeSymbols :: Names -> LHsType GhcRn -> Maybe  (LHsType GhcRn)
+transformTypeSymbols Names {..} e@(L l (HsTyLit _ (HsStrTy _ _))) = do
+    let name' = L l $ HsTyVar noExt GHC.NotPromoted $ L l fromTypeSymbolName
+    Just $ L l $ HsAppTy noExt name' e
+transformTypeSymbols _ _ = Nothing
+
+-------------------------------------------------------------------------------
 -- Transform
 -------------------------------------------------------------------------------
 
@@ -409,6 +455,18 @@ transform
     -> TcRnTypes.TcM (HsGroup GhcRn)
 transform _dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
+    transform' e = do
+        return $ case f e of
+            Just e' -> e'
+            Nothing -> e
+
+transformType
+    :: GHC.DynFlags
+    -> (LHsType GhcRn -> Maybe (LHsType GhcRn))
+    -> HsGroup GhcRn
+    -> TcRnTypes.TcM (HsGroup GhcRn)
+transformType _dflags f = SYB.everywhereM (SYB.mkM transform') where
+    transform' :: LHsType GhcRn -> TcRnTypes.TcM (LHsType GhcRn)
     transform' e = do
         return $ case f e of
             Just e' -> e'
@@ -461,20 +519,28 @@ overloadedIfMN =  GHC.mkModuleName "Overloaded.If"
 ghcOverloadedLabelsMN :: GHC.ModuleName
 ghcOverloadedLabelsMN =  GHC.mkModuleName "GHC.OverloadedLabels"
 
+overloadedTypeNatsMN :: GHC.ModuleName
+overloadedTypeNatsMN =  GHC.mkModuleName "Overloaded.TypeNats"
+
+overloadedTypeSymbolsMN :: GHC.ModuleName
+overloadedTypeSymbolsMN =  GHC.mkModuleName "Overloaded.TypeSymbols"
+
 -------------------------------------------------------------------------------
 -- Names
 -------------------------------------------------------------------------------
 
 data Names = Names
-    { fromStringName  :: GHC.Name
-    , fromSymbolName  :: GHC.Name
-    , fromNumeralName :: GHC.Name
-    , fromNaturalName :: GHC.Name
-    , fromCharName    :: GHC.Name
-    , nilName         :: GHC.Name
-    , consName        :: GHC.Name
-    , ifteName        :: GHC.Name
-    , fromLabelName   :: GHC.Name
+    { fromStringName     :: GHC.Name
+    , fromSymbolName     :: GHC.Name
+    , fromNumeralName    :: GHC.Name
+    , fromNaturalName    :: GHC.Name
+    , fromCharName       :: GHC.Name
+    , nilName            :: GHC.Name
+    , consName           :: GHC.Name
+    , ifteName           :: GHC.Name
+    , fromLabelName      :: GHC.Name
+    , fromTypeNatName    :: GHC.Name
+    , fromTypeSymbolName :: GHC.Name
     }
 
 getNames :: GHC.DynFlags -> GHC.HscEnv -> TcRnTypes.TcM Names
@@ -489,6 +555,9 @@ getNames dflags env = do
     ifteName        <- lookupName dflags env overloadedIfMN "ifte"
     fromLabelName   <- lookupName dflags env ghcOverloadedLabelsMN "fromLabel"
 
+    fromTypeNatName    <- lookupName' dflags env overloadedTypeNatsMN "FromNat"
+    fromTypeSymbolName <- lookupName' dflags env overloadedTypeSymbolsMN "FromSymbol"
+
     return Names {..}
 
 lookupName :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> TcM.TcM GHC.Name
@@ -501,12 +570,25 @@ lookupName dflags env mn vn = do
                 GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             fail "panic!"
 
+lookupName' :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> TcM.TcM GHC.Name
+lookupName' dflags env mn vn = do
+    res <-  liftIO $ Finder.findImportedModule env mn Nothing
+    case res of
+        GHC.Found _ md -> IfaceEnv.lookupOrig md (GHC.mkTcOcc vn)
+        _              -> do
+            liftIO $ GHC.putLogMsg dflags GHC.NoReason Err.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
+                GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
+            fail "panic!"
+
 -- | Module name and variable name
 data VarName = VN String String
   deriving (Eq, Show)
 
 lookupVarName :: GHC.DynFlags -> GHC.HscEnv -> VarName -> TcM.TcM GHC.Name
 lookupVarName dflags env (VN vn mn) = lookupName dflags env (GHC.mkModuleName vn) mn
+
+lookupTypeName :: GHC.DynFlags -> GHC.HscEnv -> VarName -> TcM.TcM GHC.Name
+lookupTypeName dflags env (VN vn mn) = lookupName' dflags env (GHC.mkModuleName vn) mn
 
 -------------------------------------------------------------------------------
 -- diagnostics

@@ -41,6 +41,8 @@ library
     Overloaded.Numerals
     Overloaded.Plugin
     Overloaded.Symbols
+    Overloaded.TypeNats
+    Overloaded.TypeSymbols
 
   -- GHC boot dependencies
   build-depends:
@@ -97,6 +99,9 @@ test-suite test
     Overloaded.Test.Numerals
     Overloaded.Test.Strings
     Overloaded.Test.Symbols
+    Overloaded.Test.TypeSymbols
+    Regexp.Term
+    Regexp.Type
 
   -- inherited dependencies
   build-depends:
@@ -113,7 +118,8 @@ test-suite test
 
   -- test dependencies
   build-depends:
-    , generic-lens  ^>=1.2.0.0
-    , lens          ^>=4.18
-    , tasty         ^>=1.2.3
-    , tasty-hunit   ^>=0.10.0.2
+    , generic-lens    ^>=1.2.0.0
+    , lens            ^>=4.18
+    , singleton-bool  ^>=0.1.5
+    , tasty           ^>=1.2.3
+    , tasty-hunit     ^>=0.10.0.2

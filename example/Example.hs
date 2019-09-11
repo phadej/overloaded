@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedLabels      #-}
 -- {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols:Numerals:Lists:If:Labels=Overloaded.Symbols.fromSymbol #-}
+{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols:Numerals:Lists:If:Labels=Overloaded.Symbols.fromSymbol:TypeNats #-}
 
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -78,7 +78,7 @@ main = do
     1 + n @?= (3 :: Natural)
 
     -- fin: Fin
-    let f :: Fin (N.FromGHC 5)
+    let f :: Fin 5
         f = 2
 
     print f
