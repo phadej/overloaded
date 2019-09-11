@@ -28,8 +28,12 @@ module Overloaded (
 
     -- * Overloaded:Labels
     -- | See "GHC.OverloadedLabels" for 'GHC.OverloadedLabels.fromLabel'.
-    --
-    -- generic-lens example!
+
+    -- * Overloaded:TypeNats
+    FromNatC (..),
+
+    -- * Overloade:TypeSymbols
+    FromTypeSymbolC (..),
   ) where
 
 import Overloaded.Chars
@@ -39,3 +43,5 @@ import Overloaded.Naturals
 import Overloaded.Numerals
 import Overloaded.Plugin
 import Overloaded.Symbols
+import Overloaded.TypeNats
+import Overloaded.TypeSymbols

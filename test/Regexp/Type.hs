@@ -1,5 +1,5 @@
-{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
@@ -9,18 +9,18 @@ module Regexp.Type (
     Matches,
     ) where
 
-import Data.Symbol.Ascii      (ToList)
+import Data.Symbol.Ascii (ToList)
 import Data.Type.Bool
 import GHC.TypeLits
-import Overloaded.TypeSymbols
 
+import Overloaded
 import Regexp.Term (RE (..), Stack (..))
 
 -- $setup
 -- >>> :set -XDataKinds
 
-instance FromSymbolC (RE Symbol) where
-    type FromSymbol s = Parse s
+instance FromTypeSymbolC (RE Symbol) where
+    type FromTypeSymbol s = Parse s
 
 -------------------------------------------------------------------------------
 -- Public
