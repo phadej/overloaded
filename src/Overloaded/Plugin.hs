@@ -60,6 +60,7 @@ import qualified TcRnTypes
 -- * @Lists@ __is not__ like built-in @OverloadedLists@, but desugars explicit lists to 'Overloaded.Lists.cons' and 'Overloaded.Lists.nil'
 -- * @If@ desugars @if@-expressions to @'Overloaded.If.ifte' b t e@
 -- * @Labels@ works like built-in @OverloadedLabels@ (you should enable @OverloadedLabels@ so parser recognises the syntax)
+-- * @TypeNats@ and @TypeSymbols@ desugar type-level literals into @'Overloaded.TypeNats.FromNat'@ and @'Overloaded.TypeSymbols.FromTypeSymbol'@ respectively.
 --
 -- == Known limitations
 --
@@ -556,7 +557,7 @@ getNames dflags env = do
     fromLabelName   <- lookupName dflags env ghcOverloadedLabelsMN "fromLabel"
 
     fromTypeNatName    <- lookupName' dflags env overloadedTypeNatsMN "FromNat"
-    fromTypeSymbolName <- lookupName' dflags env overloadedTypeSymbolsMN "FromSymbol"
+    fromTypeSymbolName <- lookupName' dflags env overloadedTypeSymbolsMN "FromTypeSymbol"
 
     return Names {..}
 
