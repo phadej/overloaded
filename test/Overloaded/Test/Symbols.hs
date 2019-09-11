@@ -10,12 +10,13 @@
 {-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols #-}
 module Overloaded.Test.Symbols where
 
-import Data.Proxy       (Proxy (..))
-import GHC.Exts         (Constraint)
+import Data.Proxy         (Proxy (..))
+import Data.Time.Calendar (fromGregorian)
+import GHC.Exts           (Constraint)
 import GHC.TypeLits
        (ErrorMessage (..), KnownSymbol, Symbol, TypeError, symbolVal)
-import Test.Tasty       (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=))
+import Test.Tasty         (TestTree, testGroup)
+import Test.Tasty.HUnit   (testCase, (@?=))
 
 import Overloaded
 
@@ -32,4 +33,6 @@ tests :: TestTree
 tests = testGroup "Symbols"
     [ testCase "NES" $
         "foo" @?= NES "foo"
+    , testCase "Day" $
+        "2020-02-29" @?= fromGregorian 2020 02 29
     ]
