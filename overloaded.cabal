@@ -49,6 +49,7 @@ library
     , containers  ^>=0.6.0.1
     , ghc         ^>=8.6 || ^>=8.8
     , text        ^>=1.2.3.0
+    , time        ^>=1.8.0.2 || ^>=1.9.3
 
   -- other dependencies
   build-depends:
@@ -107,6 +108,7 @@ test-suite test
     , sop-core
     , symbols
     , text
+    , time
     , vec
 
   -- test dependencies
