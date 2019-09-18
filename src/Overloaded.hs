@@ -32,8 +32,11 @@ module Overloaded (
     -- * Overloaded:TypeNats
     FromNatC (..),
 
-    -- * Overloade:TypeSymbols
+    -- * Overloaded:TypeSymbols
     FromTypeSymbolC (..),
+
+    -- * Overloaded:RecordFields
+    -- | See "GHC.Records.Compat"  from @record-hasfield@ package.
   ) where
 
 import Overloaded.Chars

@@ -108,4 +108,3 @@ main = do
     (if True then 'x' else 'y') @?= ('x' :: Char)
     (if Just 'b' then 'x' else 'y') @?= ('x' :: Char)
 
-
