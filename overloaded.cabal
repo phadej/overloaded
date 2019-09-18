@@ -104,6 +104,15 @@ test-suite example-record-fields
     , tasty
     , tasty-hunit
 
+library optics-hasfield
+  default-language: Haskell2010
+  hs-source-dirs:   optics-hasfield
+  exposed-modules:  Optics.HasField
+  build-depends:
+    , base
+    , optics-core
+    , record-hasfield
+
 test-suite test
   default-language: Haskell2010
   type:             exitcode-stdio-1.0
@@ -117,6 +126,7 @@ test-suite test
     Overloaded.Test.Lists
     Overloaded.Test.Naturals
     Overloaded.Test.Numerals
+    Overloaded.Test.RecordFields
     Overloaded.Test.Strings
     Overloaded.Test.Symbols
     Overloaded.Test.TypeSymbols
@@ -129,7 +139,10 @@ test-suite test
     , bytestring
     , containers
     , fin
+    , optics-core
+    , optics-hasfield
     , overloaded
+    , record-hasfield
     , sop-core
     , symbols
     , text
