@@ -8,9 +8,9 @@ import Control.Applicative    ((<|>))
 import Control.Monad          (foldM, forM, guard, unless, when)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.List              (elemIndex, foldl', intercalate)
+import Data.List.NonEmpty     (NonEmpty (..))
 import Data.List.Split        (splitOn)
-import Data.Maybe             (mapMaybe)
-import Data.Maybe             (catMaybes)
+import Data.Maybe             (catMaybes, mapMaybe)
 
 import qualified Data.Generics as SYB
 
@@ -204,6 +204,10 @@ pluginImpl args' env gr = do
             n <- lookupVarName dflags topEnv vn
             return $ transformLabels $ names { fromLabelName = n }
 
+    trBrackets <- case optIdiomBrackets of
+        False -> return transformNoOp
+        True  -> return $ transformIdiomBrackets names
+
     trTypeNats <- case optTypeNats of
         Off          -> return transformNoOp
         On Nothing   -> return $ transformTypeNats names
@@ -218,7 +222,7 @@ pluginImpl args' env gr = do
             n <- lookupTypeName dflags topEnv vn
             return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel
+    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel /\ trBrackets
     let trT = trTypeNats /\ trTypeSymbols
 
     gr' <- transformType dflags trT gr
@@ -299,6 +303,8 @@ parseArgs dflags = foldM go0 defaultOptions where
         return $ opts { optTypeSymbols = On mvn }
     go opts "RecordFields" _ =
         return $ opts { optRecordFields = True }
+    go opts "IdiomBrackets" _ =
+        return $ opts { optIdiomBrackets = True }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
@@ -335,29 +341,31 @@ parseArgs dflags = foldM go0 defaultOptions where
         return (Just (VN (intercalate "." $ init ps) (last ps)))
 
 data Options = Options
-    { optStrings      :: StrSym
-    , optNumerals     :: NumNat
-    , optChars        :: OnOff VarName
-    , optLists        :: OnOff (V2 VarName)
-    , optIf           :: OnOff VarName
-    , optLabels       :: OnOff VarName
-    , optTypeNats     :: OnOff VarName
-    , optTypeSymbols  :: OnOff VarName
-    , optRecordFields :: Bool
+    { optStrings       :: StrSym
+    , optNumerals      :: NumNat
+    , optChars         :: OnOff VarName
+    , optLists         :: OnOff (V2 VarName)
+    , optIf            :: OnOff VarName
+    , optLabels        :: OnOff VarName
+    , optTypeNats      :: OnOff VarName
+    , optTypeSymbols   :: OnOff VarName
+    , optRecordFields  :: Bool
+    , optIdiomBrackets :: Bool
     }
   deriving (Eq, Show)
 
 defaultOptions :: Options
 defaultOptions = Options
-    { optStrings      = NoStr
-    , optNumerals     = NoNum
-    , optChars        = Off
-    , optLists        = Off
-    , optIf           = Off
-    , optLabels       = Off
-    , optTypeNats     = Off
-    , optTypeSymbols  = Off
-    , optRecordFields = False
+    { optStrings       = NoStr
+    , optNumerals      = NoNum
+    , optChars         = Off
+    , optLists         = Off
+    , optIf            = Off
+    , optLabels        = Off
+    , optTypeNats      = Off
+    , optTypeSymbols   = Off
+    , optRecordFields  = False
+    , optIdiomBrackets = False
     }
 
 data StrSym
@@ -521,7 +529,7 @@ transform
     -> TcRnTypes.TcM (HsGroup GhcRn)
 transform _dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' e = do
+    transform' e =
         return $ case f e of
             Just e' -> e'
             Nothing -> e
@@ -591,8 +599,14 @@ overloadedTypeNatsMN =  GHC.mkModuleName "Overloaded.TypeNats"
 overloadedTypeSymbolsMN :: GHC.ModuleName
 overloadedTypeSymbolsMN =  GHC.mkModuleName "Overloaded.TypeSymbols"
 
-overloadedRecordFieldsMN :: GHC.ModuleName
-overloadedRecordFieldsMN =  GHC.mkModuleName "GHC.Records.Compat"
+ghcRecordsCompatMN :: GHC.ModuleName
+ghcRecordsCompatMN =  GHC.mkModuleName "GHC.Records.Compat"
+
+ghcBaseMN :: GHC.ModuleName
+ghcBaseMN = GHC.mkModuleName "GHC.Base"
+
+dataFunctorMN :: GHC.ModuleName
+dataFunctorMN = GHC.mkModuleName "Data.Functor"
 
 -------------------------------------------------------------------------------
 -- Names
@@ -610,6 +624,11 @@ data Names = Names
     , fromLabelName      :: GHC.Name
     , fromTypeNatName    :: GHC.Name
     , fromTypeSymbolName :: GHC.Name
+    , fmapName           :: GHC.Name
+    , pureName           :: GHC.Name
+    , apName             :: GHC.Name
+    , birdName           :: GHC.Name
+    , voidName           :: GHC.Name
     }
 
 getNames :: GHC.DynFlags -> GHC.HscEnv -> TcRnTypes.TcM Names
@@ -626,6 +645,12 @@ getNames dflags env = do
 
     fromTypeNatName    <- lookupName' dflags env overloadedTypeNatsMN "FromNat"
     fromTypeSymbolName <- lookupName' dflags env overloadedTypeSymbolsMN "FromTypeSymbol"
+
+    fmapName <- lookupName dflags env ghcBaseMN "fmap"
+    pureName <- lookupName dflags env ghcBaseMN "pure"
+    apName   <- lookupName dflags env ghcBaseMN "<*>"
+    birdName <- lookupName dflags env ghcBaseMN "<*"
+    voidName <- lookupName dflags env dataFunctorMN "void"
 
     return Names {..}
 
@@ -685,6 +710,91 @@ data V4 a = V4 a a a a
   deriving (Eq, Show)
 
 -------------------------------------------------------------------------------
+-- Idioms brackets
+-------------------------------------------------------------------------------
+
+transformIdiomBrackets
+    :: Names
+    -> LHsExpr GhcRn
+    -> Maybe (LHsExpr GhcRn)
+transformIdiomBrackets names (L _l (HsRnBracketOut _ (ExpBr _ e) _))
+    = Just (transformIdiomBrackets' names e)
+transformIdiomBrackets _ _ = Nothing
+
+transformIdiomBrackets'
+    :: Names
+    -> LHsExpr GhcRn
+    -> LHsExpr GhcRn
+transformIdiomBrackets' names expr@(L _e OpApp {}) = do
+    let bt = matchOp expr
+    let result = idiomBT names bt
+    result
+transformIdiomBrackets' names expr = do
+    let (f :| args) = matchApp expr
+    let f' = pureExpr names f
+    let result = foldl' (applyExpr names) f' args
+    result
+
+-------------------------------------------------------------------------------
+-- Function application maching
+-------------------------------------------------------------------------------
+
+-- | Match nested function applications, 'HsApp':
+-- f x y z ~> f :| [x,y,z]
+--
+matchApp :: LHsExpr p -> NonEmpty (LHsExpr p)
+matchApp (L _ (HsApp _ f x)) = neSnoc (matchApp f) x
+matchApp e = pure e
+
+neSnoc :: NonEmpty a -> a -> NonEmpty a
+neSnoc (x :| xs) y = x :| xs ++ [y]
+
+-------------------------------------------------------------------------------
+-- Operator application matching
+-------------------------------------------------------------------------------
+
+-- | Match nested operator applications, 'OpApp'.
+-- x + y * z ~>  Branch (+) (Leaf x) (Branch (*) (Leaf y) (Leaf z))
+matchOp :: LHsExpr p -> BT (LHsExpr p)
+matchOp (L _ (OpApp _  lhs op rhs)) = Branch (matchOp lhs) op (matchOp rhs)
+matchOp x = Leaf x
+
+-- | Non-empty binary tree, with elements at branches too.
+data BT a = Leaf a | Branch (BT a) a (BT a)
+
+-- flatten: note that leaf is returned as is.
+idiomBT :: Names -> BT (LHsExpr GhcRn) -> LHsExpr GhcRn
+idiomBT _     (Leaf x)            = x
+idiomBT names (Branch lhs op rhs) = fmapExpr names op (idiomBT names lhs) `ap` idiomBT names rhs
+  where
+    ap = apExpr names
+
+-------------------------------------------------------------------------------
+-- Idioms related constructors
+-------------------------------------------------------------------------------
+
+applyExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+applyExpr names f (L _ (HsPar _ (L _ (HsApp _ (L _ (HsVar _ (L _ voidName'))) x))))
+    | voidName' == voidName names = birdExpr names f x
+applyExpr names f x               = apExpr names f x
+
+apExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+apExpr Names {..} f x = hsApps l' (hsVar l' apName) [f, x] where
+    l' = GHC.noSrcSpan
+
+birdExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+birdExpr Names {..} f x = hsApps l' (hsVar l' birdName) [f, x] where
+    l' = GHC.noSrcSpan
+
+fmapExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+fmapExpr Names {..} f x = hsApps l' (hsVar l' fmapName) [f, x] where
+    l' = GHC.noSrcSpan
+
+pureExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn
+pureExpr Names {..} x = hsApps l' (hsVar l' pureName) [x] where
+    l' = GHC.noSrcSpan
+
+-------------------------------------------------------------------------------
 -- Type-checker plugin
 -------------------------------------------------------------------------------
 
@@ -702,13 +812,13 @@ tcPlugin = TcM.TcPlugin
 tcPluginInit :: TC.TcPluginM PluginCtx
 tcPluginInit = do
     -- TODO: don't fail
-    res <- TC.findImportedModule overloadedRecordFieldsMN Nothing
+    res <- TC.findImportedModule ghcRecordsCompatMN Nothing
     cls <- case res of
         GHC.Found _ md -> TC.tcLookupClass =<< TC.lookupOrig md (GHC.mkTcOcc "HasField")
         _              -> do
             dflags <- TC.unsafeTcPluginTcM GHC.getDynFlags
             TC.tcPluginIO $ GHC.putLogMsg dflags GHC.NoReason Err.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
-                GHC.text "Cannot find module" GHC.<+> GHC.ppr overloadedRecordFieldsMN
+                GHC.text "Cannot find module" GHC.<+> GHC.ppr ghcRecordsCompatMN
             fail "panic!"
 
     return PluginCtx
@@ -843,7 +953,6 @@ makeEvidence4 cls e (V4 k x s a) = Tc.EvExpr appDc where
 -- Adopted from GHC
 -------------------------------------------------------------------------------
 
-
 matchHasField
     :: GHC.DynFlags
     -> (FamInstEnv.FamInstEnv, FamInstEnv.FamInstEnv)
@@ -882,4 +991,3 @@ matchHasField _ _ _ _ = return Nothing
 
 fstOf3 :: (a, b, c) -> a
 fstOf3 (a, _, _) =  a
-
