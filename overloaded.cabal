@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               overloaded
-version:            0.1.1
+version:            0.1.2
 synopsis:           Overloaded pragmas as a plugin
 description:
   Implement @Overloaded@ pragmas as a source plugin
