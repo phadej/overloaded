@@ -120,6 +120,26 @@ import qualified TcRnTypes
 --
 -- and building a @HasField@ dictionary out of selector @foo@ appropriately cast.
 --
+-- == Idiom brackets from TemplateHaskellQuotes
+--
+-- @
+-- {-\# LANGUAGE TemplateHaskellQuotes #-}
+-- {-\# OPTIONS_GHC -fplugin=Overloaded -fplugin-opt=Overloaded:IdiomBrackets #-}
+--
+-- data Tree a
+--     = Leaf a
+--     | Branch (Tree a) (Tree a)
+--   deriving (Show)
+--
+-- instance Functor Tree where
+--     'fmap' f (Leaf x)     = Leaf (f x)
+--     'fmap' f (Branch l r) = Branch ('fmap' f l) ('fmap' f r)
+--
+-- instance Traversable Tree where
+--     'traverse' f (Leaf x)     = [| Leaf (f x) |]
+--     'traverse' f (Branch l r) = [| Branch ('traverse' f l) ('traverse' f r) |]
+-- @
+--
 plugin :: GHC.Plugin
 plugin = GHC.defaultPlugin
     { GHC.renamedResultAction = pluginImpl
