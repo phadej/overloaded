@@ -1,6 +1,7 @@
 cabal-version:      2.2
 name:               overloaded
 version:            0.1.2
+x-revision:         1
 synopsis:           Overloaded pragmas as a plugin
 description:
   Implement @Overloaded@ pragmas as a source plugin
@@ -62,7 +63,7 @@ library
     , split            ^>=0.2.3.3
     , syb              ^>=0.7.1
     , symbols          ^>=0.3.0.0
-    , vec              ^>=0.1.1.1
+    , vec              ^>=0.1.1.1 || ^>=0.2
 
 test-suite example
   default-language: Haskell2010
