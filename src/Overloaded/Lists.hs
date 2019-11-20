@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE KindSignatures         #-}
+{-# LANGUAGE PolyKinds              #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeOperators          #-}
@@ -26,14 +26,17 @@
 module Overloaded.Lists (
     Nil (..),
     Cons (..),
+    fromList,
   ) where
 
-import Data.SOP.NP (NP (..), POP (..))
+import Data.Coerce        (coerce)
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.Coerce (coerce)
+import Data.SOP.NP        (NP (..), POP (..))
 
-import qualified Data.Vec.Lazy as Vec
+import qualified Data.IntSet   as IS
+import qualified Data.Set      as S
 import qualified Data.Type.Nat as N
+import qualified Data.Vec.Lazy as Vec
 
 -------------------------------------------------------------------------------
 -- Classes
@@ -43,13 +46,17 @@ import qualified Data.Type.Nat as N
 --
 -- See test-suite for ways to define instances for 'Data.Map.Map'.
 -- There are at-least two-ways.
--- 
+--
 class Nil a where
     nil :: a
 
 -- | Class for Cons ':'.
 class Cons x ys zs | zs -> x ys where
     cons :: x -> ys -> zs
+
+-- | @since 0.1.2
+fromList :: (Nil xs, Cons x xs xs) => [x] -> xs
+fromList = foldr cons nil
 
 -------------------------------------------------------------------------------
 -- base
@@ -63,6 +70,26 @@ instance Cons a [a] [a] where
 
 instance Cons a [a] (NonEmpty a) where
     cons = (:|)
+
+-------------------------------------------------------------------------------
+-- containers
+-------------------------------------------------------------------------------
+
+-- | @since 0.1.2
+instance Nil (S.Set a) where
+    nil = S.empty
+
+-- | @since 0.1.2
+instance Ord a => Cons a (S.Set a) (S.Set a) where
+    cons = S.insert
+
+-- | @since 0.1.2
+instance Nil IS.IntSet where
+    nil = IS.empty
+
+-- | @since 0.1.2
+instance Cons Int IS.IntSet IS.IntSet where
+    cons = IS.insert
 
 -------------------------------------------------------------------------------
 -- vec
@@ -88,4 +115,4 @@ instance xs ~ '[] => Nil (POP f xs) where
     nil =  POP Nil
 
 instance Cons (NP f xs) (POP f xss) (POP f (xs ': xss)) where
-    cons = coerce ((:*) :: NP f xs -> NP (NP f) xss -> NP (NP f) (xs ': xss))
+    cons = coerce (cons :: NP f xs -> NP (NP f) xss -> NP (NP f) (xs ': xss))

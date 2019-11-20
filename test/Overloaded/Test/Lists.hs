@@ -12,6 +12,7 @@ import Test.Tasty             (TestTree, testGroup)
 import Test.Tasty.HUnit       (testCase, (@?=))
 
 import qualified Data.Map      as Map
+import qualified Data.Set      as Set
 import qualified Data.Type.Nat as N
 
 import Overloaded.Lists
@@ -50,23 +51,31 @@ tests = testGroup "Lists"
         pop @?= POP ((I 0 :* I False :* Nil) :* (I "NO" :* Nil) :* Nil)
 
     , testCase "Map inline" $ do
-        let m :: M Int Char
-            m = [1, 'x', 3, 'y', 2, 'z']
+        let m :: Map.Map Int Char
+            m = unM [1, 'x', 3, 'y', 2, 'z']
 
-        m @?= M (Map.fromList [(1,'x'),(2,'z'),(3,'y')])
+        m @?= Map.fromList [(1,'x'),(2,'z'),(3,'y')]
 
     , testCase "Map pairs" $ do
-        let m :: N Int Char
-            m = [(1, 'x'), (3, 'y'), (2, 'z')]
+        let m :: Map.Map Int Char
+            m = unN [(1, 'x'), (3, 'y'), (2, 'z')]
 
-        m @?= N (Map.fromList [(1,'x'),(2,'z'),(3,'y')])
+        m @?= Map.fromList [(1,'x'),(2,'z'),(3,'y')]
+
+    , testCase "Set" $ do
+        let s :: Set.Set Char
+            s = ['f', 'o', 'o']
+
+        s @?= Set.fromList ['o', 'f']
+
+        s @?= fromList ['o', 'f']
     ]
 
 -------------------------------------------------------------------------------
 -- Map inline
 -------------------------------------------------------------------------------
 
-newtype M k v = M (Map.Map k v)
+newtype M k v = M { unM :: Map.Map k v }
   deriving (Eq, Show)
 
 newtype M' k v = M' (k -> Map.Map k v)
@@ -84,7 +93,7 @@ instance Cons k (M' k v) (M k v) where
 -- Map pairs
 -------------------------------------------------------------------------------
 
-newtype N k v = N (Map.Map k v)
+newtype N k v = N { unN :: Map.Map k v }
   deriving (Eq, Show)
 
 instance Nil (N k v) where
