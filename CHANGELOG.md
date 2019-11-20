@@ -1,3 +1,8 @@
+# 0.1.3
+
+- Add `Nil` and `Cons` `Set` and `IntSet` instanes
+- Add 'fromList' function for homogeneous things.
+
 # 0.1.2
 
 - Add `Overloaded:RecordFields` type-checker plugin to emulate `HasField` from [`GHC.Record.Compat`](https://hackage.haskell.org/package/record-hasfield-1.0/docs/GHC-Records-Compat.html)
