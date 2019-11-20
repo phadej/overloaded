@@ -2,6 +2,7 @@
 
 - Add `Nil` and `Cons` `Set` and `IntSet` instanes
 - Add 'fromList' function for homogeneous things.
+- Enable `PolyKinds` for `Lists` instances.
 
 # 0.1.2
 

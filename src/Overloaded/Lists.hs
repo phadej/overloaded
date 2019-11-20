@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE KindSignatures         #-}
+{-# LANGUAGE PolyKinds              #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeOperators          #-}
@@ -115,4 +115,4 @@ instance xs ~ '[] => Nil (POP f xs) where
     nil =  POP Nil
 
 instance Cons (NP f xs) (POP f xss) (POP f (xs ': xss)) where
-    cons = coerce ((:*) :: NP f xs -> NP (NP f) xss -> NP (NP f) (xs ': xss))
+    cons = coerce (cons :: NP f xs -> NP (NP f) xss -> NP (NP f) (xs ': xss))
