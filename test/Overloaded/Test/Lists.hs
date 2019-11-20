@@ -4,6 +4,7 @@
 {-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Lists #-}
 module Overloaded.Test.Lists where
 
+import Data.Coerce (coerce)
 import Data.List.NonEmpty     (NonEmpty (..))
 import Data.SOP.BasicFunctors (I (..))
 import Data.SOP.NP            (NP (..), POP (..))
@@ -78,16 +79,23 @@ tests = testGroup "Lists"
 newtype M k v = M { unM :: Map.Map k v }
   deriving (Eq, Show)
 
-newtype M' k v = M' (k -> Map.Map k v)
+data M' k v = M' v (Map.Map k v)
 
 instance Nil (M k v) where
     nil = M Map.empty
+    null = Map.null . unM
 
-instance Ord k => Cons v (M k v) (M' k v) where
-    cons v (M m) = M' (\k -> Map.insert k v m)
+instance Cons v (M k v) (M' k v) where
+    cons v (M m) = M' v m
 
-instance Cons k (M' k v) (M k v) where
-    cons k (M' km) = M (km k)
+    uncons (M' v m) = Just (v, M m)
+
+instance Ord k => Cons k (M' k v) (M k v) where
+    cons k (M' v m) = M (Map.insert k v m)
+
+    uncons (M m) = case Map.minViewWithKey m of
+        Nothing           -> Nothing
+        Just ((k, v), m') -> Just (k, M' v m')
 
 -------------------------------------------------------------------------------
 -- Map pairs
@@ -98,6 +106,8 @@ newtype N k v = N { unN :: Map.Map k v }
 
 instance Nil (N k v) where
     nil = N Map.empty
+    null = Map.null . unN
 
 instance Ord k => Cons (k,v) (N k v) (N k v) where
     cons (k,v) (N m) = N (Map.insert k v m)
+    uncons (N m) = fmap (fmap N) (Map.minViewWithKey m)

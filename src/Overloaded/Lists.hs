@@ -50,9 +50,13 @@ import qualified Data.Vec.Lazy as Vec
 class Nil a where
     nil :: a
 
+    null :: a -> Bool
+
 -- | Class for Cons ':'.
 class Cons x ys zs | zs -> x ys where
     cons :: x -> ys -> zs
+
+    uncons :: zs -> Maybe (x, ys)
 
 -- | @since 0.1.2
 fromList :: (Nil xs, Cons x xs xs) => [x] -> xs
@@ -64,12 +68,17 @@ fromList = foldr cons nil
 
 instance Nil [a] where
     nil = []
+    null = Prelude.null
 
 instance Cons a [a] [a] where
     cons = (:)
 
+    uncons []     = Nothing
+    uncons (x:xs) = Just (x, xs)
+
 instance Cons a [a] (NonEmpty a) where
     cons = (:|)
+    uncons (x :| xs) = Just (x, xs)
 
 -------------------------------------------------------------------------------
 -- containers
@@ -78,18 +87,22 @@ instance Cons a [a] (NonEmpty a) where
 -- | @since 0.1.2
 instance Nil (S.Set a) where
     nil = S.empty
+    null = S.null
 
 -- | @since 0.1.2
 instance Ord a => Cons a (S.Set a) (S.Set a) where
     cons = S.insert
+    uncons = S.minView
 
 -- | @since 0.1.2
 instance Nil IS.IntSet where
     nil = IS.empty
+    null = IS.null
 
 -- | @since 0.1.2
 instance Cons Int IS.IntSet IS.IntSet where
     cons = IS.insert
+    uncons = IS.minView
 
 -------------------------------------------------------------------------------
 -- vec
@@ -97,9 +110,11 @@ instance Cons Int IS.IntSet IS.IntSet where
 
 instance n ~ 'N.Z => Nil (Vec.Vec n a) where
     nil = Vec.VNil
+    null _ = True
 
 instance Cons a (Vec.Vec n a) (Vec.Vec ('N.S n) a) where
     cons = (Vec.:::)
+    uncons (x Vec.::: xs) = Just (x, xs)
 
 -------------------------------------------------------------------------------
 -- sop-core
@@ -107,12 +122,16 @@ instance Cons a (Vec.Vec n a) (Vec.Vec ('N.S n) a) where
 
 instance xs ~ '[] => Nil (NP f xs) where
     nil = Nil
+    null _ = True
 
 instance Cons (f x) (NP f xs)  (NP f (x ': xs)) where
     cons = (:*)
+    uncons (x :* xs) = Just (x, xs)
 
 instance xs ~ '[] => Nil (POP f xs) where
     nil =  POP Nil
+    null _ = True
 
 instance Cons (NP f xs) (POP f xss) (POP f (xs ': xss)) where
     cons = coerce (cons :: NP f xs -> NP (NP f) xss -> NP (NP f) (xs ': xss))
+    uncons = coerce (uncons :: NP (NP f) (xs ': xss) -> Maybe (NP f xs, NP (NP f) xss))
