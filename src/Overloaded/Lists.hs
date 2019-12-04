@@ -33,7 +33,10 @@ import Data.Coerce        (coerce)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.SOP.NP        (NP (..), POP (..))
 
+import qualified Data.IntMap   as IM
 import qualified Data.IntSet   as IS
+import qualified Data.Map      as M
+import qualified Data.Sequence as Seq
 import qualified Data.Set      as S
 import qualified Data.Type.Nat as N
 import qualified Data.Vec.Lazy as Vec
@@ -67,10 +70,10 @@ fromList = foldr cons nil
 instance Nil [a] where
     nil = []
 
-instance Cons a [a] [a] where
+instance (a ~ b, b ~ c) =>  Cons a [b] [c] where
     cons = (:)
 
-instance Cons a [a] (NonEmpty a) where
+instance (a ~ b, b ~ c) =>  Cons a [b] (NonEmpty c) where
     cons = (:|)
 
 -------------------------------------------------------------------------------
@@ -82,7 +85,7 @@ instance Nil (S.Set a) where
     nil = S.empty
 
 -- | @since 0.1.3
-instance Ord a => Cons a (S.Set a) (S.Set a) where
+instance (Ord a, a ~ b, b ~ c) => Cons a (S.Set b) (S.Set c) where
     cons = S.insert
 
 -- | @since 0.1.3
@@ -92,6 +95,30 @@ instance Nil IS.IntSet where
 -- | @since 0.1.3
 instance Cons Int IS.IntSet IS.IntSet where
     cons = IS.insert
+
+-- | @since 0.2
+instance Nil (Seq.Seq a) where
+    nil = Seq.empty
+
+-- | @since 0.2
+instance (a ~ b, b ~ c) => Cons a (Seq.Seq b) (Seq.Seq c) where
+    cons = (Seq.<|)
+
+-- | @since 0.2
+instance Nil (M.Map k v) where
+    nil = M.empty
+
+-- | @since 0.2
+instance (Ord k, k ~ k1, k ~ k2, v ~ v1, v ~ v2) => Cons (k, v) (M.Map k1 v1) (M.Map k2 v2) where
+    cons ~(k, v) = M.insert k v
+
+-- | @since 0.2
+instance Nil (IM.IntMap v) where
+    nil = IM.empty
+
+-- | @since 0.2
+instance (i ~ Int, a ~ b, b ~ c) => Cons (i, a) (IM.IntMap b) (IM.IntMap c) where
+    cons ~(i, x) = IM.insert i x
 
 -------------------------------------------------------------------------------
 -- vec
