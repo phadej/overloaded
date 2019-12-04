@@ -3,6 +3,7 @@
 - Make infixr 5 cons
 - Make Vec, NP and POP instances match more eagerly
 - Add `Overloaded.Lists.Bidi`
+- Add `Seq`, `Map` and `IntMap` `Cons` and `Nil` instances
 
 # 0.1.3
 

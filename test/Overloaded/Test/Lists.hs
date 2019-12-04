@@ -61,7 +61,7 @@ tests = testGroup "Lists"
 
     , testCase "Map pairs" $ do
         let m :: Map.Map Int Char
-            m = unN [(1, 'x'), (3, 'y'), (2, 'z')]
+            m = [(1, 'x'), (3, 'y'), (2, 'z')]
 
         m @?= Map.fromList [(1,'x'),(2,'z'),(3,'y')]
 
@@ -89,7 +89,8 @@ _vecTest01 = as2 @Vec $ 1 `cons` 2 `cons` _vecTest00
 --
 --    inferenceTestStr = fromString "foo"
 --
--- doesn't work out in the source files either. In GHCi things work, kind of
+-- doesn't work out in the source files either: MonomorphismRestriction
+-- In GHCi things work, 
 --
 -- @
 -- *Overloaded> :t True `cons` 'a' `cons` nil
@@ -104,7 +105,7 @@ _inferenceList = as1 @[] inferenceTest
 _inferenceVec  = as2 @Vec inferenceTest
 
 -------------------------------------------------------------------------------
--- Map inline
+-- Map inline: weird thing to do
 -------------------------------------------------------------------------------
 
 newtype M k v = M { unM :: Map.Map k v }
@@ -120,19 +121,6 @@ instance Ord k => Cons v (M k v) (M' k v) where
 
 instance Cons k (M' k v) (M k v) where
     cons k (M' km) = M (km k)
-
--------------------------------------------------------------------------------
--- Map pairs
--------------------------------------------------------------------------------
-
-newtype N k v = N { unN :: Map.Map k v }
-  deriving (Eq, Show)
-
-instance Nil (N k v) where
-    nil = N Map.empty
-
-instance Ord k => Cons (k,v) (N k v) (N k v) where
-    cons (k,v) (N m) = N (Map.insert k v m)
 
 -------------------------------------------------------------------------------
 -- As

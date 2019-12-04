@@ -36,7 +36,10 @@ module Overloaded.Lists.Bidi (
 
 import Data.SOP.NP (NP (..), POP (..))
 
+import qualified Data.IntMap   as IM
 import qualified Data.IntSet   as IS
+import qualified Data.Sequence as Seq
+import qualified Data.Map      as M
 import qualified Data.Set      as S
 import qualified Data.Type.Nat as N
 import qualified Data.Vec.Lazy as Vec
@@ -64,14 +67,17 @@ infixr 5 `cons`
 -- base
 -------------------------------------------------------------------------------
 
-instance Cons a [a] [a]
+instance (a ~ b, b ~ c) => Cons a [b] [c]
 
 -------------------------------------------------------------------------------
 -- containers
 -------------------------------------------------------------------------------
 
-instance Ord a => Cons a (S.Set a) (S.Set a)
+instance (Ord a, a ~ b, b ~ c) => Cons a (S.Set a) (S.Set a)
 instance Cons Int IS.IntSet IS.IntSet
+instance (a ~ b, b ~ c) => Cons a (Seq.Seq b) (Seq.Seq c)
+instance (Ord k, k ~ k1, k ~ k2, v ~ v1, v ~ v2) => Cons (k, v) (M.Map k1 v1) (M.Map k2 v2)
+instance (i ~ Int, a ~ b, b ~ c) => Cons (i, a) (IM.IntMap b) (IM.IntMap c)
 
 -------------------------------------------------------------------------------
 -- vec
