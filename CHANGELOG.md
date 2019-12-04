@@ -1,3 +1,8 @@
+# 0.2
+
+- Make infixr 5 cons
+- Make Vec, NP and POP instances match more eagerly
+
 # 0.1.3
 
 - Add `Nil` and `Cons` `Set` and `IntSet` instanes

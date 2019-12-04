@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeOperators          #-}
 {-# LANGUAGE UndecidableInstances   #-}
 
--- | Another way to desugar overloaded numeric literals. See 'FromNatural'.
+-- | Another way to desugar overloaded list literals. See 'Nil' and 'Cons'.
 --
 -- An explicit list expression, e.g. @[1, True]@ is desugared to
 --
@@ -54,7 +54,9 @@ class Nil a where
 class Cons x ys zs | zs -> x ys where
     cons :: x -> ys -> zs
 
--- | @since 0.1.2
+infixr 5 `cons`
+
+-- | @since 0.1.3
 fromList :: (Nil xs, Cons x xs xs) => [x] -> xs
 fromList = foldr cons nil
 
@@ -75,19 +77,19 @@ instance Cons a [a] (NonEmpty a) where
 -- containers
 -------------------------------------------------------------------------------
 
--- | @since 0.1.2
+-- | @since 0.1.3
 instance Nil (S.Set a) where
     nil = S.empty
 
--- | @since 0.1.2
+-- | @since 0.1.3
 instance Ord a => Cons a (S.Set a) (S.Set a) where
     cons = S.insert
 
--- | @since 0.1.2
+-- | @since 0.1.3
 instance Nil IS.IntSet where
     nil = IS.empty
 
--- | @since 0.1.2
+-- | @since 0.1.3
 instance Cons Int IS.IntSet IS.IntSet where
     cons = IS.insert
 
@@ -98,7 +100,7 @@ instance Cons Int IS.IntSet IS.IntSet where
 instance n ~ 'N.Z => Nil (Vec.Vec n a) where
     nil = Vec.VNil
 
-instance Cons a (Vec.Vec n a) (Vec.Vec ('N.S n) a) where
+instance (a ~ b, b ~ c, m ~ 'N.S n) => Cons a (Vec.Vec n b) (Vec.Vec m c) where
     cons = (Vec.:::)
 
 -------------------------------------------------------------------------------
@@ -108,11 +110,11 @@ instance Cons a (Vec.Vec n a) (Vec.Vec ('N.S n) a) where
 instance xs ~ '[] => Nil (NP f xs) where
     nil = Nil
 
-instance Cons (f x) (NP f xs)  (NP f (x ': xs)) where
+instance (f ~ g, g ~ h, xxs ~ (x ': xs)) => Cons (f x) (NP g xs)  (NP h xxs) where
     cons = (:*)
 
 instance xs ~ '[] => Nil (POP f xs) where
     nil =  POP Nil
 
-instance Cons (NP f xs) (POP f xss) (POP f (xs ': xss)) where
+instance (f ~ g, g ~ h, xsxss ~ (xs ': xss)) => Cons (NP f xs) (POP g xss) (POP h xsxss) where
     cons = coerce (cons :: NP f xs -> NP (NP f) xss -> NP (NP f) (xs ': xss))

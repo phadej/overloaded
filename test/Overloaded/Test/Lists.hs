@@ -1,7 +1,10 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Lists #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# OPTIONS_GHC -fplugin=Overloaded -fplugin-opt=Overloaded:Lists #-}
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
 module Overloaded.Test.Lists where
 
 import Data.List.NonEmpty     (NonEmpty (..))
@@ -72,6 +75,35 @@ tests = testGroup "Lists"
     ]
 
 -------------------------------------------------------------------------------
+-- Inference
+-------------------------------------------------------------------------------
+
+_vecTest00 :: Vec 'N.Z Int
+_vecTest00 = nil
+
+-- check bidi-inference
+_vecTest01 = as2 @Vec $ 1 `cons` 2 `cons` _vecTest00
+
+-- GHC doesn't infer this type, though it could?
+-- On the other hand
+--
+--    inferenceTestStr = fromString "foo"
+--
+-- doesn't work out in the source files either. In GHCi things work, kind of
+--
+-- @
+-- *Overloaded> :t True `cons` 'a' `cons` nil
+-- True `cons` 'a' `cons` nil
+--   :: (Cons Bool ys1 zs, Cons Char ys2 ys1, Nil ys2) => zs
+-- @
+--
+inferenceTest :: (Nil xs, Cons x xs ys, Cons y ys zs, Num x, Num y) => zs
+inferenceTest = [1, 2]
+
+_inferenceList = as1 @[] inferenceTest
+_inferenceVec  = as2 @Vec inferenceTest
+
+-------------------------------------------------------------------------------
 -- Map inline
 -------------------------------------------------------------------------------
 
@@ -101,3 +133,13 @@ instance Nil (N k v) where
 
 instance Ord k => Cons (k,v) (N k v) (N k v) where
     cons (k,v) (N m) = N (Map.insert k v m)
+
+-------------------------------------------------------------------------------
+-- As
+-------------------------------------------------------------------------------
+
+as1 :: tycon a -> tycon a
+as1 = id
+
+as2 :: tycon a b -> tycon a b
+as2 = id
