@@ -33,13 +33,19 @@ import Data.Coerce        (coerce)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.SOP.NP        (NP (..), POP (..))
 
-import qualified Data.IntMap   as IM
-import qualified Data.IntSet   as IS
-import qualified Data.Map      as M
-import qualified Data.Sequence as Seq
-import qualified Data.Set      as S
-import qualified Data.Type.Nat as N
-import qualified Data.Vec.Lazy as Vec
+import qualified Data.Bin             as B
+import qualified Data.IntMap          as IM
+import qualified Data.IntSet          as IS
+import qualified Data.Map             as M
+import qualified Data.RAList          as RAL
+import qualified Data.RAList.NonEmpty as NERAL
+import qualified Data.RAVec           as RAV
+import qualified Data.RAVec.NonEmpty  as NERAV
+import qualified Data.Sequence        as Seq
+import qualified Data.Set             as S
+import qualified Data.Type.Bin        as B
+import qualified Data.Type.Nat        as N
+import qualified Data.Vec.Lazy        as Vec
 
 -------------------------------------------------------------------------------
 -- Classes
@@ -145,3 +151,27 @@ instance xs ~ '[] => Nil (POP f xs) where
 
 instance (f ~ g, g ~ h, xsxss ~ (xs ': xss)) => Cons (NP f xs) (POP g xss) (POP h xsxss) where
     cons = coerce (cons :: NP f xs -> NP (NP f) xss -> NP (NP f) (xs ': xss))
+
+-------------------------------------------------------------------------------
+-- ral
+-------------------------------------------------------------------------------
+
+instance Nil (RAL.RAList a) where
+    nil = RAL.empty
+
+instance (a ~ b, a ~ c) => Cons a (RAL.RAList b) (RAL.RAList c) where
+    cons = RAL.cons
+
+instance (a ~ b, a ~ c) => Cons a (RAL.RAList b) (NERAL.NERAList c) where
+    cons x RAL.Empty         = NERAL.singleton x
+    cons x (RAL.NonEmpty xs) = NERAL.cons x xs
+
+instance b ~ 'B.BZ => Nil (RAV.RAVec b a) where
+    nil = RAV.empty
+
+instance (b ~ 'B.BP bb, bp ~ B.Pred bb, bb ~ B.Succ' bp) => Cons a (RAV.RAVec bp a) (RAV.RAVec b a) where
+    cons = RAV.cons
+
+instance (bp ~ B.Pred b, b ~ B.Succ' bp) => Cons a (RAV.RAVec bp a) (NERAV.NERAVec b a) where
+    cons x RAV.Empty         = NERAV.singleton x
+    cons x (RAV.NonEmpty xs) = NERAV.cons x xs

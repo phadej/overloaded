@@ -3,8 +3,10 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE TypeApplications      #-}
-{-# OPTIONS_GHC -fplugin=Overloaded -fplugin-opt=Overloaded:Lists #-}
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS -fplugin=Overloaded
+            -fplugin-opt=Overloaded:Lists
+  #-}
 module Overloaded.Test.Lists where
 
 import Data.List.NonEmpty     (NonEmpty (..))
@@ -14,9 +16,11 @@ import Data.Vec.Lazy          (Vec (..))
 import Test.Tasty             (TestTree, testGroup)
 import Test.Tasty.HUnit       (testCase, (@?=))
 
-import qualified Data.Map      as Map
-import qualified Data.Set      as Set
-import qualified Data.Type.Nat as N
+import qualified Data.Map            as Map
+import qualified Data.RAVec          as RAV
+import qualified Data.RAVec.NonEmpty as NERAV
+import qualified Data.Set            as Set
+import qualified Data.Type.Nat       as N
 
 import Overloaded.Lists
 
@@ -40,6 +44,12 @@ tests = testGroup "Lists"
 --                [x,y,z] -> x + y + z
 --
 --        res @?= 6
+
+    , testCase "RAVec" $
+        RAV.toList ['x','y','z'] @?= "xyz"
+
+    , testCase "RAVec.NonEmpty" $
+        NERAV.toNonEmpty ['x','y','z'] @?= ('x' :| "yz")
 
     , testCase "NP" $ do
         let np :: NP I '[Int, Bool, String]
