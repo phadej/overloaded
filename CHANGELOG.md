@@ -2,6 +2,7 @@
 
 - Make infixr 5 cons
 - Make Vec, NP and POP instances match more eagerly
+- Add `Overloaded.Lists.Bidi`
 
 # 0.1.3
 

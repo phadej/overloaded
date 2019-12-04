@@ -38,6 +38,7 @@ library
     Overloaded.Chars
     Overloaded.If
     Overloaded.Lists
+    Overloaded.Lists.Bidi
     Overloaded.Naturals
     Overloaded.Numerals
     Overloaded.Plugin
@@ -141,6 +142,7 @@ test-suite test
     Overloaded.Test.Labels
     Overloaded.Test.Labels.GenericLens
     Overloaded.Test.Lists
+    Overloaded.Test.Lists.Bidi
     Overloaded.Test.Naturals
     Overloaded.Test.Numerals
     Overloaded.Test.RecordFields
