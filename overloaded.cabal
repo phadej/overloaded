@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               overloaded
-version:            0.2
+version:            0.2.1
 synopsis:           Overloaded pragmas as a plugin
 description:
   Implement @Overloaded@ pragmas as a source plugin
@@ -121,6 +121,25 @@ test-suite example-record-fields
   build-depends:
     , HUnit            ^>=1.6.0.0
     , record-hasfield
+    , tasty
+    , tasty-hunit
+
+test-suite example-boring
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   example
+  main-is:          Boring.hs
+
+  -- inherited dependencies
+  build-depends:
+    , base
+    , overloaded
+
+  -- test dependencies
+  build-depends:
+    , boring       ^>=0.1.3
+    , constraints  ^>=0.11.2
+    , HUnit        ^>=1.6.0.0
     , tasty
     , tasty-hunit
 

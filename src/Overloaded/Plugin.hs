@@ -66,11 +66,12 @@ import qualified TcRnTypes
 -- * @Strings@ works like built-in @OverloadedStrings@ (but you can use different method than 'Data.String.fromString')
 -- * @Numerals@ desugars literal numbers to @'Overloaded.Numerals.fromNumeral' \@nat@
 -- * @Naturals@ desugars literal numbers to @'Overloaded.Naturals.fromNatural' nat@ (i.e. like 'Data.String.fromString')
--- * @Chars@ desugars literal characters to @'Overloaded.Chars.fromChars' c@. /Note:/ there isn't type-level alternative: we cannot promote 'Char's.
+-- * @Chars@ desugars literal characters to @'Overloaded.Chars.fromChars' c@. /Note:/ there isn't type-level alternative: we cannot promote 'Char's
 -- * @Lists@ __is not__ like built-in @OverloadedLists@, but desugars explicit lists to 'Overloaded.Lists.cons' and 'Overloaded.Lists.nil'
 -- * @If@ desugars @if@-expressions to @'Overloaded.If.ifte' b t e@
+-- * @Unit@ desugars @()@-expressions to @'Overloaded.Lists.nil'@ (but you can use different method, e.g. @boring@ from <https://hackage.haskell.org/package/boring-0.1.3/docs/Data-Boring.html Data.Boring>)
 -- * @Labels@ works like built-in @OverloadedLabels@ (you should enable @OverloadedLabels@ so parser recognises the syntax)
--- * @TypeNats@ and @TypeSymbols@ desugar type-level literals into @'Overloaded.TypeNats.FromNat'@ and @'Overloaded.TypeSymbols.FromTypeSymbol'@ respectively.
+-- * @TypeNats@ and @TypeSymbols@ desugar type-level literals into @'Overloaded.TypeNats.FromNat'@ and @'Overloaded.TypeSymbols.FromTypeSymbol'@ respectively
 --
 -- == Known limitations
 --
@@ -228,6 +229,13 @@ pluginImpl args' env gr = do
         False -> return transformNoOp
         True  -> return $ transformIdiomBrackets names
 
+    trUnit <- case optUnit of
+        Off        -> return transformNoOp
+        On Nothing -> return $ transformUnit names
+        On (Just vn) -> do
+            n <- lookupVarName dflags topEnv vn
+            return $ transformUnit $ names { unitName = n }
+
     trTypeNats <- case optTypeNats of
         Off          -> return transformNoOp
         On Nothing   -> return $ transformTypeNats names
@@ -242,7 +250,7 @@ pluginImpl args' env gr = do
             n <- lookupTypeName dflags topEnv vn
             return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel /\ trBrackets
+    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel /\ trBrackets /\ trUnit
     let trT = trTypeNats /\ trTypeSymbols
 
     gr' <- transformType dflags trT gr
@@ -312,6 +320,9 @@ parseArgs dflags = foldM go0 defaultOptions where
     go opts "If"       vns = do
         mvn <- oneName "If" vns
         return $ opts { optIf = On mvn }
+    go opts "Unit"       vns = do
+        mvn <- oneName "Unit" vns
+        return $ opts { optUnit = On mvn }
     go opts "Labels"   vns = do
         mvn <- oneName "Symbols" vns
         return $ opts { optLabels = On mvn }
@@ -367,6 +378,7 @@ data Options = Options
     , optLists         :: OnOff (V2 VarName)
     , optIf            :: OnOff VarName
     , optLabels        :: OnOff VarName
+    , optUnit          :: OnOff VarName
     , optTypeNats      :: OnOff VarName
     , optTypeSymbols   :: OnOff VarName
     , optRecordFields  :: Bool
@@ -384,6 +396,7 @@ defaultOptions = Options
     , optLabels        = Off
     , optTypeNats      = Off
     , optTypeSymbols   = Off
+    , optUnit          = Off
     , optRecordFields  = False
     , optIdiomBrackets = False
     }
@@ -519,6 +532,18 @@ transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
 transformLabels _ _ = Nothing
 
 -------------------------------------------------------------------------------
+-- OverloadedUnit
+-------------------------------------------------------------------------------
+
+transformUnit :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformUnit Names {..} (L l (HsVar _ (L _ name')))
+    | name' == ghcUnitName = Just (hsVar l unitName)
+  where
+    ghcUnitName = GHC.getName (GHC.tupleDataCon GHC.Boxed 0)
+
+transformUnit _ _ = Nothing
+
+-------------------------------------------------------------------------------
 -- OverloadedTypeNats
 -------------------------------------------------------------------------------
 
@@ -549,7 +574,9 @@ transform
     -> TcRnTypes.TcM (HsGroup GhcRn)
 transform _dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
-    transform' e =
+    transform' e@(L _l _) = do
+        -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason Err.SevWarning _l (GHC.defaultErrStyle _dflags) $
+        --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
         return $ case f e of
             Just e' -> e'
             Nothing -> e
@@ -641,6 +668,7 @@ data Names = Names
     , nilName            :: GHC.Name
     , consName           :: GHC.Name
     , ifteName           :: GHC.Name
+    , unitName           :: GHC.Name
     , fromLabelName      :: GHC.Name
     , fromTypeNatName    :: GHC.Name
     , fromTypeSymbolName :: GHC.Name
@@ -659,6 +687,7 @@ getNames dflags env = do
     fromNaturalName <- lookupName dflags env overloadedNaturalsMN "fromNatural"
     fromCharName    <- lookupName dflags env overloadedCharsMN "fromChar"
     nilName         <- lookupName dflags env overloadedListsMN "nil"
+    unitName        <- lookupName dflags env overloadedListsMN "nil"
     consName        <- lookupName dflags env overloadedListsMN "cons"
     ifteName        <- lookupName dflags env overloadedIfMN "ifte"
     fromLabelName   <- lookupName dflags env ghcOverloadedLabelsMN "fromLabel"
