@@ -1,3 +1,7 @@
+# 0.2.1
+
+- Add `Overloaded:Unit`
+
 # 0.2
 
 - Make infixr 5 cons
