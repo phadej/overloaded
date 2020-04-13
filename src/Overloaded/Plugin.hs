@@ -16,6 +16,7 @@ import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 import qualified GhcPlugins      as Plugins
 
+import Overloaded.Plugin.Categories
 import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.HasField
 import Overloaded.Plugin.IdiomBrackets
@@ -64,7 +65,8 @@ import Overloaded.Plugin.V
 -- * @Unit@ desugars @()@-expressions to @'Overloaded.Lists.nil'@ (but you can use different method, e.g. @boring@ from <https://hackage.haskell.org/package/boring-0.1.3/docs/Data-Boring.html Data.Boring>)
 -- * @Labels@ works like built-in @OverloadedLabels@ (you should enable @OverloadedLabels@ so parser recognises the syntax)
 -- * @TypeNats@ and @TypeSymbols@ desugar type-level literals into @'Overloaded.TypeNats.FromNat'@ and @'Overloaded.TypeSymbols.FromTypeSymbol'@ respectively
--- @ @Do@ desugar in /Local Do/ fashion. See examples.
+-- * @Do@ desugar in /Local Do/ fashion. See examples.
+-- * @Categories@ change @Arrows@ desugaring to use /"correct"/ category classes.
 --
 -- == Known limitations
 --
@@ -226,6 +228,10 @@ pluginImpl args' env gr = do
         False -> return transformNoOp
         True  -> return $ transformDo names
 
+    trCategories <- case optCategories of
+        False -> return transformNoOp
+        True  -> return $ transformCategories names
+
     trUnit <- case optUnit of
         Off        -> return transformNoOp
         On Nothing -> return $ transformUnit names
@@ -247,7 +253,7 @@ pluginImpl args' env gr = do
             n <- lookupTypeName dflags topEnv vn
             return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    let tr  = trStr <> trNum <> trChr <> trLists <> trIf <> trLabel <> trBrackets <> trDo <> trUnit
+    let tr  = trStr <> trNum <> trChr <> trLists <> trIf <> trLabel <> trBrackets <> trDo <> trCategories <> trUnit
     let trT = trTypeNats <> trTypeSymbols
 
     gr' <- transformType dflags trT gr
@@ -330,6 +336,8 @@ parseArgs dflags = foldM go0 defaultOptions where
         return $ opts { optIdiomBrackets = True }
     go opts "Do" _ =
         return $ opts { optDo = True }
+    go opts "Categories" _ =
+        return $ opts { optCategories = True }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
@@ -378,6 +386,7 @@ data Options = Options
     , optRecordFields  :: Bool
     , optIdiomBrackets :: Bool
     , optDo            :: Bool
+    , optCategories    :: Bool
     }
   deriving (Eq, Show)
 
@@ -395,6 +404,7 @@ defaultOptions = Options
     , optRecordFields  = False
     , optIdiomBrackets = False
     , optDo            = False
+    , optCategories    = False
     }
 
 data StrSym

@@ -2,6 +2,7 @@ module Main (main) where
 
 import Test.Tasty (defaultMain, testGroup)
 
+import qualified Overloaded.Test.Categories as Cat
 import qualified Overloaded.Test.Chars      as Chr
 import qualified Overloaded.Test.Do         as Doo
 import qualified Overloaded.Test.If         as Iff
@@ -28,4 +29,5 @@ main = defaultMain $ testGroup "Tests"
     , Str.tests
     , Sym.tests
     , GL.tests
+    , Cat.tests
     ]

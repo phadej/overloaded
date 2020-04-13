@@ -19,6 +19,19 @@ module GHC.Compat.Expr (
     hsApps,
     hsTyApp, 
     hsTyVar,
+    hsPar,
+    hsOpApp,
+    -- * Patterns
+    LPat,
+    Pat (..),
+    -- * Proc commands
+    HsCmdTop (..),
+    HsCmd (..),
+    LHsCmd,
+    CmdLStmt,
+    HsArrAppType (..),
+    -- * Tuples
+    HsTupArg (..),
     -- * Literals
     HsLit (..),
     HsTyLit (..),
@@ -49,6 +62,8 @@ module GHC.Compat.Expr (
     srcSpanEndCol,
     -- * Extensions
     noExtField,
+    -- * Names
+    nameToString,
 ) where
 
 #if MIN_VERSION_ghc(8,10,0)
@@ -66,7 +81,7 @@ import SrcLoc
        (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
        srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
 
-import qualified Name as GHC
+import qualified GHC.Compat.All as GHC
 
 #if !(MIN_VERSION_ghc(8,10,0))
 noExtField  :: NoExt
@@ -84,9 +99,20 @@ hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
     app f x = L l (HsApp noExtField f x)
 
+hsOpApp :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsOpApp l x op y = L l (OpApp GHC.defaultFixity x op y)
+
 hsTyApp :: SrcSpan -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
 #if MIN_VERSION_ghc(8,8,0)
 hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
 #else
 hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
 #endif
+
+hsPar :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsPar l e = L l (HsPar noExtField e)
+
+nameToString :: GHC.Name -> String
+nameToString = GHC.occNameString . GHC.occName
+
+
