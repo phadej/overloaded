@@ -3,6 +3,7 @@ module Main (main) where
 import Test.Tasty (defaultMain, testGroup)
 
 import qualified Overloaded.Test.Chars      as Chr
+import qualified Overloaded.Test.Do         as Doo
 import qualified Overloaded.Test.If         as Iff
 import qualified Overloaded.Test.Labels     as Lbl
 import qualified Overloaded.Test.Lists      as Lst
@@ -18,6 +19,7 @@ main :: IO ()
 main = defaultMain $ testGroup "Tests"
     [ Chr.tests
     , Iff.tests
+    , Doo.tests
     , Lbl.tests
     , Lst.tests
     , Lst.Bidi.tests

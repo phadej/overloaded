@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               overloaded
-version:            0.2.1
+version:            0.2.2
 synopsis:           Overloaded pragmas as a plugin
 description:
   Implement @Overloaded@ pragmas as a source plugin
@@ -36,6 +36,7 @@ library
   exposed-modules:
     Overloaded
     Overloaded.Chars
+    Overloaded.Do
     Overloaded.If
     Overloaded.Lists
     Overloaded.Lists.Bidi
@@ -162,7 +163,9 @@ test-suite test
   hs-source-dirs:   test
   main-is:          Tests.hs
   other-modules:
+    IxMonad
     Overloaded.Test.Chars
+    Overloaded.Test.Do
     Overloaded.Test.If
     Overloaded.Test.Labels
     Overloaded.Test.Labels.GenericLens

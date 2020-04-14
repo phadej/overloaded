@@ -5,6 +5,15 @@ module GHC.Compat.Expr (
     HsExpr (..),
     LHsExpr,
     HsBracket (..),
+    HsStmtContext (..),
+    StmtLR (..),
+    ExprLStmt,
+    MatchGroup (..),
+    Match (..),
+    GRHSs (..),
+    GRHS (..),
+    HsMatchContext (..),
+    HsLocalBindsLR (..),
     -- * Literals
     HsLit (..),
     HsTyLit (..),
@@ -26,8 +35,13 @@ module GHC.Compat.Expr (
     -- * SourceSpan
     Located,
     GenLocated (..),
-    SrcSpan,
+    SrcSpan (..),
+    RealSrcSpan,
     noSrcSpan,
+    srcSpanStartLine,
+    srcSpanEndLine,
+    srcSpanStartCol,
+    srcSpanEndCol,
     -- * Extensions
     noExtField,
 ) where
@@ -42,7 +56,9 @@ import HsSyn
 import BasicTypes (PromotionFlag (..))
 #endif
 
-import SrcLoc (Located, SrcSpan, GenLocated (..), noSrcSpan)
+import SrcLoc
+       (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
+       srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
 
 #if !(MIN_VERSION_ghc(8,10,0))
 noExtField  :: NoExt

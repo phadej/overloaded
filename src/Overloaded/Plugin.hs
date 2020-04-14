@@ -59,6 +59,7 @@ import qualified TcPluginM       as Plugins
 -- * @Unit@ desugars @()@-expressions to @'Overloaded.Lists.nil'@ (but you can use different method, e.g. @boring@ from <https://hackage.haskell.org/package/boring-0.1.3/docs/Data-Boring.html Data.Boring>)
 -- * @Labels@ works like built-in @OverloadedLabels@ (you should enable @OverloadedLabels@ so parser recognises the syntax)
 -- * @TypeNats@ and @TypeSymbols@ desugar type-level literals into @'Overloaded.TypeNats.FromNat'@ and @'Overloaded.TypeSymbols.FromTypeSymbol'@ respectively
+-- @ @Do@ desugar in /Local Do/ fashion. See examples.
 --
 -- == Known limitations
 --
@@ -216,6 +217,10 @@ pluginImpl args' env gr = do
         False -> return transformNoOp
         True  -> return $ transformIdiomBrackets names
 
+    trDo <- case optDo of
+        False -> return transformNoOp
+        True  -> return $ transformDo names
+
     trUnit <- case optUnit of
         Off        -> return transformNoOp
         On Nothing -> return $ transformUnit names
@@ -237,7 +242,7 @@ pluginImpl args' env gr = do
             n <- lookupTypeName dflags topEnv vn
             return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel /\ trBrackets /\ trUnit
+    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel /\ trBrackets /\ trDo /\ trUnit
     let trT = trTypeNats /\ trTypeSymbols
 
     gr' <- transformType dflags trT gr
@@ -323,6 +328,8 @@ parseArgs dflags = foldM go0 defaultOptions where
         return $ opts { optRecordFields = True }
     go opts "IdiomBrackets" _ =
         return $ opts { optIdiomBrackets = True }
+    go opts "Do" _ =
+        return $ opts { optDo = True }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
@@ -370,6 +377,7 @@ data Options = Options
     , optTypeSymbols   :: OnOff VarName
     , optRecordFields  :: Bool
     , optIdiomBrackets :: Bool
+    , optDo            :: Bool
     }
   deriving (Eq, Show)
 
@@ -386,6 +394,7 @@ defaultOptions = Options
     , optUnit          = Off
     , optRecordFields  = False
     , optIdiomBrackets = False
+    , optDo            = False
     }
 
 data StrSym
@@ -587,6 +596,9 @@ transformType _dflags f = SYB.everywhereM (SYB.mkM transform') where
 hsVar :: SrcSpan -> GHC.Name -> LHsExpr GhcRn
 hsVar l n = L l (HsVar noExtField (L l n))
 
+hsTyVar :: SrcSpan -> GHC.Name -> HsType GhcRn
+hsTyVar l n = HsTyVar noExtField NotPromoted (L l n)
+
 hsApps :: SrcSpan -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
 hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
@@ -619,6 +631,9 @@ overloadedListsMN =  GHC.mkModuleName "Overloaded.Lists"
 
 overloadedIfMN :: GHC.ModuleName
 overloadedIfMN =  GHC.mkModuleName "Overloaded.If"
+
+overloadedDoMN :: GHC.ModuleName
+overloadedDoMN =  GHC.mkModuleName "Overloaded.Do"
 
 ghcOverloadedLabelsMN :: GHC.ModuleName
 ghcOverloadedLabelsMN =  GHC.mkModuleName "GHC.OverloadedLabels"
@@ -660,6 +675,10 @@ data Names = Names
     , apName             :: GHC.Name
     , birdName           :: GHC.Name
     , voidName           :: GHC.Name
+    , composeName        :: GHC.Name
+    , doPureName         :: GHC.Name
+    , doThenName         :: GHC.Name
+    , doBindName         :: GHC.Name
     }
 
 getNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.TcM Names
@@ -683,6 +702,12 @@ getNames dflags env = do
     apName   <- lookupName dflags env ghcBaseMN "<*>"
     birdName <- lookupName dflags env ghcBaseMN "<*"
     voidName <- lookupName dflags env dataFunctorMN "void"
+
+    composeName <- lookupName dflags env ghcBaseMN "."
+
+    doPureName <- lookupName' dflags env overloadedDoMN "Pure"
+    doBindName <- lookupName' dflags env overloadedDoMN "Bind"
+    doThenName <- lookupName' dflags env overloadedDoMN "Then"
 
     return Names {..}
 
@@ -740,6 +765,57 @@ data V2 a = V2 a a
 
 data V4 a = V4 a a a a
   deriving (Eq, Show)
+
+-------------------------------------------------------------------------------
+-- Local Do
+-------------------------------------------------------------------------------
+
+transformDo
+    :: Names
+    -> LHsExpr GhcRn
+    -> Maybe (LHsExpr GhcRn)
+transformDo names (L _l (OpApp _ (L (RealSrcSpan l1) (HsVar _ (L _ doName)))
+                                 (L (RealSrcSpan l2) (HsVar _ (L _ compName')))
+                                 (L (RealSrcSpan l3) (HsDo _ DoExpr (L _ stmts)))))
+    | spanNextTo l1 l2
+    , spanNextTo l2 l3 
+    , compName' == composeName names
+    = Just (transformDo' names doName stmts)
+transformDo _ _ = Nothing
+
+transformDo' :: Names -> GHC.Name -> [ExprLStmt GhcRn] -> LHsExpr GhcRn
+transformDo' _names _doName [] = error "empty do"
+transformDo'  names  doName (L l (BindStmt _ pat body _ _) : next) =
+    hsApps l bind [ body, kont ]
+  where
+    bind  = hsTyApp l (hsVar l doName) (hsTyVar l (doBindName names))
+    next' = transformDo' names doName next
+    kont  = L l $ HsLam noExtField MG
+        { mg_ext    = noExtField
+        , mg_alts   = L l $ pure $ L l Match
+            { m_ext   = noExtField
+            , m_ctxt  = LambdaExpr
+            , m_pats  = [pat]
+            , m_grhss = GRHSs
+                { grhssExt        = noExtField
+                , grhssGRHSs      = [ L noSrcSpan $ GRHS noExtField [] $ next' ]
+                , grhssLocalBinds = L noSrcSpan $ EmptyLocalBinds noExtField
+                }
+            }
+        , mg_origin = Plugins.Generated
+        }
+transformDo'  names  doName (L l (BodyStmt _ body _ _) : next) =
+    hsApps l then_ [ body, next' ]
+  where
+    then_ = hsTyApp l (hsVar l doName) (hsTyVar l (doThenName names))
+    next' = transformDo' names doName next
+transformDo' _ _ (L _ (LastStmt _ body _ _) : []) = body
+transformDo' _ _ (x : _) = error ("Unsupported statement in do: " ++ SYB.gshow x)
+
+spanNextTo :: RealSrcSpan -> RealSrcSpan -> Bool
+spanNextTo x y
+    = srcSpanStartLine y == srcSpanEndLine x
+    && srcSpanStartCol y == srcSpanEndCol x
 
 -------------------------------------------------------------------------------
 -- Idioms brackets
