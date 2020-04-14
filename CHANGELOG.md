@@ -1,3 +1,8 @@
+# 0.2.2
+
+- Add `Overloaded:Do`
+- GHC-8.10 support
+
 # 0.2.1
 
 - Add `Overloaded:Unit`
