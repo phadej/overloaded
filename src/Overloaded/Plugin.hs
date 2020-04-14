@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Overloaded plugin, which makes magic possible.
@@ -15,22 +14,10 @@ import Data.Maybe             (catMaybes, mapMaybe)
 import qualified Data.Generics as SYB
 
 -- GHC stuff
-import qualified Class
-import qualified ErrUtils   as Err
-import qualified FamInst
-import qualified FamInstEnv
-import qualified Finder
-import qualified GhcPlugins as GHC
-import           HsSyn      as GHC
-import qualified IfaceEnv
-import qualified RdrName
-import           SrcLoc
-import qualified TcEnv
-import qualified TcEvidence as Tc
-import qualified TcMType
-import qualified TcPluginM  as TC
-import qualified TcRnMonad  as TcM
-import qualified TcRnTypes
+import qualified GHC.Compat.All  as GHC
+import           GHC.Compat.Expr
+import qualified GhcPlugins      as Plugins
+import qualified TcPluginM       as Plugins
 
 -------------------------------------------------------------------------------
 -- Plugin
@@ -141,11 +128,11 @@ import qualified TcRnTypes
 --     'traverse' f (Branch l r) = [| Branch ('traverse' f l) ('traverse' f r) |]
 -- @
 --
-plugin :: GHC.Plugin
-plugin = GHC.defaultPlugin
-    { GHC.renamedResultAction = pluginImpl
-    , GHC.tcPlugin            = enabled tcPlugin
-    , GHC.pluginRecompile     = GHC.purePlugin
+plugin :: Plugins.Plugin
+plugin = Plugins.defaultPlugin
+    { Plugins.renamedResultAction = pluginImpl
+    , Plugins.tcPlugin            = enabled tcPlugin
+    , Plugins.pluginRecompile     = Plugins.purePlugin
     }
   where
     enabled p args'
@@ -155,13 +142,13 @@ plugin = GHC.defaultPlugin
         args = concatMap (splitOn ":") args'
 
 pluginImpl
-    :: [GHC.CommandLineOption]
-    -> TcRnTypes.TcGblEnv
+    :: [Plugins.CommandLineOption]
+    -> GHC.TcGblEnv
     -> HsGroup GhcRn
-    -> TcRnTypes.TcM (TcRnTypes.TcGblEnv, HsGroup GhcRn)
+    -> GHC.TcM (GHC.TcGblEnv, HsGroup GhcRn)
 pluginImpl args' env gr = do
     dflags <- GHC.getDynFlags
-    topEnv <- TcM.getTopEnv
+    topEnv <- GHC.getTopEnv
 
     debug $ show args
     debug $ GHC.showPpr dflags gr
@@ -451,7 +438,7 @@ transformStrings _ _ = Nothing
 transformSymbols :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
 transformSymbols Names {..} (L l (HsLit _ (HsString _ fs))) = do
     let name' = hsVar l fromSymbolName
-    let inner = hsTyApp l name' (HsTyLit noExt (HsStrTy GHC.NoSourceText fs))
+    let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     Just inner
 
 transformSymbols _ _ = Nothing
@@ -464,7 +451,7 @@ transformNumerals :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
 transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
     | not n, i >= 0 = do
         let name' = hsVar l fromNumeralName
-        let inner = hsTyApp l name' (HsTyLit noExt (HsNumTy GHC.NoSourceText i))
+        let inner = hsTyApp l name' (HsTyLit noExtField (HsNumTy GHC.NoSourceText i))
         Just inner
 
 transformNumerals _ _ = Nothing
@@ -513,10 +500,10 @@ transformLists _ _ = Nothing
 
 transformIf :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
 transformIf Names {..} (L l (HsIf _ _ co th el)) = Just val4 where
-    val4 = L l $ HsApp noExt val3 el
-    val3 = L l $ HsApp noExt val2 th
-    val2 = L l $ HsApp noExt val1 co
-    val1 = L l $ HsVar noExt $ L l ifteName
+    val4 = L l $ HsApp noExtField val3 el
+    val3 = L l $ HsApp noExtField val2 th
+    val2 = L l $ HsApp noExtField val1 co
+    val1 = L l $ HsVar noExtField $ L l ifteName
 transformIf _ _ = Nothing
 
 -------------------------------------------------------------------------------
@@ -526,7 +513,7 @@ transformIf _ _ = Nothing
 transformLabels :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
 transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
     let name' = hsVar l fromLabelName
-    let inner = hsTyApp l name' (HsTyLit noExt (HsStrTy GHC.NoSourceText fs))
+    let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     Just inner
 
 transformLabels _ _ = Nothing
@@ -549,8 +536,8 @@ transformUnit _ _ = Nothing
 
 transformTypeNats :: Names -> LHsType GhcRn -> Maybe  (LHsType GhcRn)
 transformTypeNats Names {..} e@(L l (HsTyLit _ (HsNumTy _ _))) = do
-    let name' = L l $ HsTyVar noExt GHC.NotPromoted $ L l fromTypeNatName
-    Just $ L l $ HsAppTy noExt name' e
+    let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeNatName
+    Just $ L l $ HsAppTy noExtField name' e
 transformTypeNats _ _ = Nothing
 
 -------------------------------------------------------------------------------
@@ -559,8 +546,8 @@ transformTypeNats _ _ = Nothing
 
 transformTypeSymbols :: Names -> LHsType GhcRn -> Maybe  (LHsType GhcRn)
 transformTypeSymbols Names {..} e@(L l (HsTyLit _ (HsStrTy _ _))) = do
-    let name' = L l $ HsTyVar noExt GHC.NotPromoted $ L l fromTypeSymbolName
-    Just $ L l $ HsAppTy noExt name' e
+    let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeSymbolName
+    Just $ L l $ HsAppTy noExtField name' e
 transformTypeSymbols _ _ = Nothing
 
 -------------------------------------------------------------------------------
@@ -571,11 +558,11 @@ transform
     :: GHC.DynFlags
     -> (LHsExpr GhcRn -> Maybe (LHsExpr GhcRn))
     -> HsGroup GhcRn
-    -> TcRnTypes.TcM (HsGroup GhcRn)
+    -> GHC.TcM (HsGroup GhcRn)
 transform _dflags f = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsExpr GhcRn -> TcRnTypes.TcM (LHsExpr GhcRn)
+    transform' :: LHsExpr GhcRn -> GHC.TcM (LHsExpr GhcRn)
     transform' e@(L _l _) = do
-        -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason Err.SevWarning _l (GHC.defaultErrStyle _dflags) $
+        -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
         --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
         return $ case f e of
             Just e' -> e'
@@ -585,9 +572,9 @@ transformType
     :: GHC.DynFlags
     -> (LHsType GhcRn -> Maybe (LHsType GhcRn))
     -> HsGroup GhcRn
-    -> TcRnTypes.TcM (HsGroup GhcRn)
+    -> GHC.TcM (HsGroup GhcRn)
 transformType _dflags f = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsType GhcRn -> TcRnTypes.TcM (LHsType GhcRn)
+    transform' :: LHsType GhcRn -> GHC.TcM (LHsType GhcRn)
     transform' e = do
         return $ case f e of
             Just e' -> e'
@@ -598,19 +585,15 @@ transformType _dflags f = SYB.everywhereM (SYB.mkM transform') where
 -------------------------------------------------------------------------------
 
 hsVar :: SrcSpan -> GHC.Name -> LHsExpr GhcRn
-hsVar l n = L l (HsVar noExt (L l n))
+hsVar l n = L l (HsVar noExtField (L l n))
 
 hsApps :: SrcSpan -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
 hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
-    app f x = L l (HsApp noExt f x)
+    app f x = L l (HsApp noExtField f x)
 
 hsTyApp :: SrcSpan -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
-#if MIN_VERSION_ghc(8,8,0)
-hsTyApp l x ty = L l $ HsAppType noExt x (HsWC [] (L l ty))
-#else
-hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
-#endif
+hsTyApp = GHC.hsTyApp
 
 -------------------------------------------------------------------------------
 -- ModuleNames
@@ -679,7 +662,7 @@ data Names = Names
     , voidName           :: GHC.Name
     }
 
-getNames :: GHC.DynFlags -> GHC.HscEnv -> TcRnTypes.TcM Names
+getNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.TcM Names
 getNames dflags env = do
     fromStringName  <- lookupName dflags env dataStringMN "fromString"
     fromSymbolName  <- lookupName dflags env overloadedSymbolsMN "fromSymbol"
@@ -703,23 +686,23 @@ getNames dflags env = do
 
     return Names {..}
 
-lookupName :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> TcM.TcM GHC.Name
+lookupName :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
 lookupName dflags env mn vn = do
-    res <-  liftIO $ Finder.findImportedModule env mn Nothing
+    res <-  liftIO $ GHC.findImportedModule env mn Nothing
     case res of
-        GHC.Found _ md -> IfaceEnv.lookupOrig md (GHC.mkVarOcc vn)
+        GHC.Found _ md -> GHC.lookupOrig md (GHC.mkVarOcc vn)
         _              -> do
-            liftIO $ GHC.putLogMsg dflags GHC.NoReason Err.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
+            liftIO $ GHC.putLogMsg dflags GHC.NoReason GHC.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
                 GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             fail "panic!"
 
-lookupName' :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> TcM.TcM GHC.Name
+lookupName' :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
 lookupName' dflags env mn vn = do
-    res <-  liftIO $ Finder.findImportedModule env mn Nothing
+    res <-  liftIO $ GHC.findImportedModule env mn Nothing
     case res of
-        GHC.Found _ md -> IfaceEnv.lookupOrig md (GHC.mkTcOcc vn)
+        GHC.Found _ md -> GHC.lookupOrig md (GHC.mkTcOcc vn)
         _              -> do
-            liftIO $ GHC.putLogMsg dflags GHC.NoReason Err.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
+            liftIO $ GHC.putLogMsg dflags GHC.NoReason GHC.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
                 GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             fail "panic!"
 
@@ -727,10 +710,10 @@ lookupName' dflags env mn vn = do
 data VarName = VN String String
   deriving (Eq, Show)
 
-lookupVarName :: GHC.DynFlags -> GHC.HscEnv -> VarName -> TcM.TcM GHC.Name
+lookupVarName :: GHC.DynFlags -> GHC.HscEnv -> VarName -> GHC.TcM GHC.Name
 lookupVarName dflags env (VN vn mn) = lookupName dflags env (GHC.mkModuleName vn) mn
 
-lookupTypeName :: GHC.DynFlags -> GHC.HscEnv -> VarName -> TcM.TcM GHC.Name
+lookupTypeName :: GHC.DynFlags -> GHC.HscEnv -> VarName -> GHC.TcM GHC.Name
 lookupTypeName dflags env (VN vn mn) = lookupName' dflags env (GHC.mkModuleName vn) mn
 
 -------------------------------------------------------------------------------
@@ -739,7 +722,7 @@ lookupTypeName dflags env (VN vn mn) = lookupName' dflags env (GHC.mkModuleName 
 
 warn :: MonadIO m => GHC.DynFlags -> SrcSpan -> GHC.SDoc -> m ()
 warn dflags l doc =
-    liftIO $ GHC.putLogMsg dflags GHC.NoReason Err.SevWarning l (GHC.defaultErrStyle dflags) doc
+    liftIO $ GHC.putLogMsg dflags GHC.NoReason GHC.SevWarning l (GHC.defaultErrStyle dflags) doc
         --     GHC.text "parsed string"
         --     GHC.$$
         --     GHC.ppr fs
@@ -829,44 +812,44 @@ applyExpr names f x               = apExpr names f x
 
 apExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 apExpr Names {..} f x = hsApps l' (hsVar l' apName) [f, x] where
-    l' = GHC.noSrcSpan
+    l' = noSrcSpan
 
 birdExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 birdExpr Names {..} f x = hsApps l' (hsVar l' birdName) [f, x] where
-    l' = GHC.noSrcSpan
+    l' = noSrcSpan
 
 fmapExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 fmapExpr Names {..} f x = hsApps l' (hsVar l' fmapName) [f, x] where
-    l' = GHC.noSrcSpan
+    l' = noSrcSpan
 
 pureExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn
 pureExpr Names {..} x = hsApps l' (hsVar l' pureName) [x] where
-    l' = GHC.noSrcSpan
+    l' = noSrcSpan
 
 -------------------------------------------------------------------------------
 -- Type-checker plugin
 -------------------------------------------------------------------------------
 
 newtype PluginCtx = PluginCtx
-    { hasPolyFieldCls :: Class.Class
+    { hasPolyFieldCls :: GHC.Class
     }
 
-tcPlugin :: TcM.TcPlugin
-tcPlugin = TcM.TcPlugin
-    { TcM.tcPluginInit  = tcPluginInit
-    , TcM.tcPluginSolve = tcPluginSolve
-    , TcM.tcPluginStop  = const (return ())
+tcPlugin :: GHC.TcPlugin
+tcPlugin = GHC.TcPlugin
+    { GHC.tcPluginInit  = tcPluginInit
+    , GHC.tcPluginSolve = tcPluginSolve
+    , GHC.tcPluginStop  = const (return ())
     }
 
-tcPluginInit :: TC.TcPluginM PluginCtx
+tcPluginInit :: GHC.TcPluginM PluginCtx
 tcPluginInit = do
     -- TODO: don't fail
-    res <- TC.findImportedModule ghcRecordsCompatMN Nothing
+    res <- Plugins.findImportedModule ghcRecordsCompatMN Nothing
     cls <- case res of
-        GHC.Found _ md -> TC.tcLookupClass =<< TC.lookupOrig md (GHC.mkTcOcc "HasField")
+        GHC.Found _ md -> Plugins.tcLookupClass =<< Plugins.lookupOrig md (GHC.mkTcOcc "HasField")
         _              -> do
-            dflags <- TC.unsafeTcPluginTcM GHC.getDynFlags
-            TC.tcPluginIO $ GHC.putLogMsg dflags GHC.NoReason Err.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
+            dflags <- GHC.unsafeTcPluginTcM GHC.getDynFlags
+            Plugins.tcPluginIO $ GHC.putLogMsg dflags GHC.NoReason GHC.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
                 GHC.text "Cannot find module" GHC.<+> GHC.ppr ghcRecordsCompatMN
             fail "panic!"
 
@@ -874,26 +857,27 @@ tcPluginInit = do
         { hasPolyFieldCls = cls
         }
 
+
 -- HasPolyField "petName" Pet Pet [Char] [Char]
-tcPluginSolve :: PluginCtx -> TcRnTypes.TcPluginSolver
+tcPluginSolve :: PluginCtx -> GHC.TcPluginSolver
 tcPluginSolve PluginCtx {..} _ _ wanteds = do
     -- acquire context
-    dflags      <- TC.unsafeTcPluginTcM GHC.getDynFlags
-    famInstEnvs <- TC.getFamInstEnvs
-    rdrEnv      <- TC.unsafeTcPluginTcM TcM.getGlobalRdrEnv
+    dflags      <- Plugins.unsafeTcPluginTcM GHC.getDynFlags
+    famInstEnvs <- Plugins.getFamInstEnvs
+    rdrEnv      <- Plugins.unsafeTcPluginTcM GHC.getGlobalRdrEnv
 
     solved <- forM wantedsHasPolyField $ \(ct, tys@(V4 _k _name _s a)) -> do
-        -- TC.tcPluginIO $ warn dflags noSrcSpan $
+        -- GHC.tcPluginIO $ warn dflags noSrcSpan $
         --     GHC.text "wanted" GHC.<+> GHC.ppr ct
 
-        m <- TC.unsafeTcPluginTcM $ matchHasField dflags famInstEnvs rdrEnv tys
+        m <- GHC.unsafeTcPluginTcM $ matchHasField dflags famInstEnvs rdrEnv tys
         fmap (\evTerm -> (evTerm, ct)) $ forM m $ \(tc, dc, args, fl, _sel_id) -> do
             -- get location
-            let ctloc = TcM.ctLoc ct
-            -- let l = GHC.RealSrcSpan $ TcM.ctLocSpan ctloc
+            let ctloc = GHC.ctLoc ct
+            -- let l = GHC.RealSrcSpan $ GHC.ctLocSpan ctloc
 
             -- debug print
-            -- TC.tcPluginIO $ warn dflags l $ GHC.text "DEBUG" GHC.$$ GHC.ppr dbg
+            -- GHC.tcPluginIO $ warn dflags l $ GHC.text "DEBUG" GHC.$$ GHC.ppr dbg
 
             let s' = GHC.mkTyConApp tc args
 
@@ -916,7 +900,7 @@ tcPluginSolve PluginCtx {..} _ _ wanteds = do
             let b' = a'
             let t' = s'
 
-            bName <- TC.unsafeTcPluginTcM $ TcM.newName (GHC.mkVarOcc "b")
+            bName <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc "b")
             let bBndr   = GHC.mkLocalId bName $ xs !! idx
 
             -- (\b -> DC b x1 x2, x0)
@@ -936,7 +920,7 @@ tcPluginSolve PluginCtx {..} _ _ wanteds = do
             -- DC x0 x1 x2 -> (\b -> DC b x1 x2, x0)
             let caseBranch = (GHC.DataAlt dc, exist' ++ theta' ++ xs', rhs)
 
-            -- TC.tcPluginIO $ warn dflags l $
+            -- GHC.tcPluginIO $ warn dflags l $
             --     GHC.text "cases"
             --     GHC.$$
             --     GHC.ppr caseType
@@ -945,18 +929,18 @@ tcPluginSolve PluginCtx {..} _ _ wanteds = do
 
 
             -- \s -> case s of DC x0 x1 x2 -> (\b -> DC b x1 x2, x0)
-            sName <- TC.unsafeTcPluginTcM $ TcM.newName (GHC.mkVarOcc "s")
+            sName <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc "s")
             let sBndr   = GHC.mkLocalId sName s'
             let expr   = GHC.mkCoreLams [sBndr] $ GHC.Case (GHC.Var sBndr) sBndr caseType [caseBranch]
             let evterm = makeEvidence4 hasPolyFieldCls expr tys
 
             -- wanteds
-            ctEvidence <- TC.newWanted ctloc $ GHC.mkPrimEqPred a a'
+            ctEvidence <- Plugins.newWanted ctloc $ GHC.mkPrimEqPred a a'
 
-            return (evterm, [ TcM.mkNonCanonical ctEvidence -- a ~ a'
+            return (evterm, [ GHC.mkNonCanonical ctEvidence -- a ~ a'
                             ])
 
-    return $ TcRnTypes.TcPluginOk (mapMaybe extractA solved) (concat $ mapMaybe extractB solved)
+    return $ GHC.TcPluginOk (mapMaybe extractA solved) (concat $ mapMaybe extractB solved)
   where
     wantedsHasPolyField = mapMaybe (findClassConstraint4 hasPolyFieldCls) wanteds
 
@@ -971,25 +955,25 @@ replace _ _ []     = []
 replace 0 y (_:xs) = y:xs
 replace n y (x:xs) = x : replace (pred n) y xs
 
-makeVar :: String -> GHC.Type -> TcRnTypes.TcPluginM GHC.Var
+makeVar :: String -> GHC.Type -> GHC.TcPluginM GHC.Var
 makeVar n ty = do
-    name <- TC.unsafeTcPluginTcM $ TcM.newName (GHC.mkVarOcc n)
+    name <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc n)
     return (GHC.mkLocalId name ty)
 
 -------------------------------------------------------------------------------
 -- Simple Ct operations
 -------------------------------------------------------------------------------
 
-findClassConstraint4 :: Class.Class -> TcM.Ct -> Maybe (TcM.Ct, V4 GHC.Type)
+findClassConstraint4 :: GHC.Class -> GHC.Ct -> Maybe (GHC.Ct, V4 GHC.Type)
 findClassConstraint4 cls ct = do
-   (cls', [k, x, s, a]) <- GHC.getClassPredTys_maybe (TcM.ctPred ct)
+   (cls', [k, x, s, a]) <- GHC.getClassPredTys_maybe (GHC.ctPred ct)
    guard (cls' == cls)
    return (ct, V4 k x s a)
 
 -- | Make newtype class evidence
-makeEvidence4 :: Class.Class -> GHC.CoreExpr -> V4 GHC.Type -> Tc.EvTerm
-makeEvidence4 cls e (V4 k x s a) = Tc.EvExpr appDc where
-    tyCon = Class.classTyCon cls
+makeEvidence4 :: GHC.Class -> GHC.CoreExpr -> V4 GHC.Type -> GHC.EvTerm
+makeEvidence4 cls e (V4 k x s a) = GHC.EvExpr appDc where
+    tyCon = GHC.classTyCon cls
     dc    = GHC.tyConSingleDataCon tyCon
     appDc = GHC.mkCoreConApps dc
         [ GHC.Type k
@@ -1004,26 +988,26 @@ makeEvidence4 cls e (V4 k x s a) = Tc.EvExpr appDc where
 
 matchHasField
     :: GHC.DynFlags
-    -> (FamInstEnv.FamInstEnv, FamInstEnv.FamInstEnv)
-    -> RdrName.GlobalRdrEnv
+    -> (GHC.FamInstEnv, GHC.FamInstEnv)
+    -> GHC.GlobalRdrEnv
     -> V4 GHC.Type
-    -> TcM.TcM (Maybe (GHC.TyCon, GHC.DataCon, [GHC.Type], GHC.FieldLabel, GHC.Id))
+    -> GHC.TcM (Maybe (GHC.TyCon, GHC.DataCon, [GHC.Type], GHC.FieldLabel, GHC.Id))
 matchHasField _dflags famInstEnvs rdrEnv (V4 _k x s _a)
     -- x should be a literal string
     | Just xStr <- GHC.isStrLitTy x
     -- s should be an applied type constructor
     , Just (tc, args) <- GHC.tcSplitTyConApp_maybe s
     -- use representation tycon (if data family); it has the fields
-    , let s_tc = fstOf3 (FamInst.tcLookupDataFamInst famInstEnvs tc args)
+    , let s_tc = fstOf3 (GHC.tcLookupDataFamInst famInstEnvs tc args)
     -- x should be a field of r
     , Just fl <- GHC.lookupTyConFieldLabel xStr s_tc
     -- the field selector should be in scope
-    , Just _gre <- RdrName.lookupGRE_FieldLabel rdrEnv fl
+    , Just _gre <- GHC.lookupGRE_FieldLabel rdrEnv fl
     -- and the type should have only single data constructor (for simplicity)
     , Just [dc] <- GHC.tyConDataCons_maybe tc
     = do
-        sel_id <- TcEnv.tcLookupId (GHC.flSelector fl)
-        (_tv_prs, _preds, sel_ty) <- TcMType.tcInstType TcMType.newMetaTyVars sel_id
+        sel_id <- GHC.tcLookupId (GHC.flSelector fl)
+        (_tv_prs, _preds, sel_ty) <- GHC.tcInstType GHC.newMetaTyVars sel_id
 
         -- The selector must not be "naughty" (i.e. the field
         -- cannot have an existentially quantified type), and

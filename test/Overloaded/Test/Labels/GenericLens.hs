@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric    #-}
 {-# LANGUAGE OverloadedLabels #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Labels=Data.Generics.Product.Fields.field #-}
+{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Labels=Data.Generics.Lens.Lite.field #-}
 module Overloaded.Test.Labels.GenericLens where
 
 import Control.Lens     (over, view)
