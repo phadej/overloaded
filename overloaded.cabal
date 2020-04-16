@@ -158,6 +158,17 @@ test-suite example-boring
     , tasty
     , tasty-hunit
 
+test-suite example-local-do
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   example
+  main-is:          LocalDo.hs
+
+  -- inherited dependencies
+  build-depends:
+    , base
+    , overloaded
+
 library optics-hasfield
   default-language: Haskell2010
   hs-source-dirs:   optics-hasfield
