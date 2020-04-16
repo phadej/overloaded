@@ -35,11 +35,24 @@ module Overloaded (
     -- * Overloaded:TypeSymbols
     FromTypeSymbolC (..),
 
+    -- * Overloaded:Do
+    DoMethod (..), Pure, Then, Bind, Monad' (..),
+
+    -- * Overloaded:Categories
+    Category,
+    identity,
+    (##),
+    CategoryProduct (..),
+    CategoryCoproduct (..),
+    CategoryExponential (..),
+
     -- * Overloaded:RecordFields
     -- | See "GHC.Records.Compat"  from @record-hasfield@ package.
   ) where
 
+import Overloaded.Categories
 import Overloaded.Chars
+import Overloaded.Do
 import Overloaded.If
 import Overloaded.Lists
 import Overloaded.Naturals

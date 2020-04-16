@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE RecordWildCards #-}
 module Overloaded.Plugin.Names (
     -- * Names
     Names (..),
@@ -15,8 +15,8 @@ import Control.Monad.IO.Class (MonadIO (..))
 
 import Overloaded.Plugin.Diagnostics
 
-import           GHC.Compat.Expr
 import qualified GHC.Compat.All  as GHC
+import           GHC.Compat.Expr
 
 data Names = Names
     { fromStringName     :: GHC.Name
@@ -40,6 +40,11 @@ data Names = Names
     , doPureName         :: GHC.Name
     , doThenName         :: GHC.Name
     , doBindName         :: GHC.Name
+    , catIdentityName    :: GHC.Name
+    , catComposeName     :: GHC.Name
+    , catProj1Name       :: GHC.Name
+    , catProj2Name       :: GHC.Name
+    , catFanoutName      :: GHC.Name
     }
 
 getNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.TcM Names
@@ -69,6 +74,12 @@ getNames dflags env = do
     doPureName <- lookupName' dflags env overloadedDoMN "Pure"
     doBindName <- lookupName' dflags env overloadedDoMN "Bind"
     doThenName <- lookupName' dflags env overloadedDoMN "Then"
+
+    catIdentityName <- lookupName dflags env overloadedCategoriesMN "identity"
+    catComposeName  <- lookupName dflags env overloadedCategoriesMN "##"
+    catProj1Name    <- lookupName dflags env overloadedCategoriesMN "proj1"
+    catProj2Name    <- lookupName dflags env overloadedCategoriesMN "proj2"
+    catFanoutName   <- lookupName dflags env overloadedCategoriesMN "fanout"
 
     return Names {..}
 
@@ -127,6 +138,9 @@ overloadedIfMN =  GHC.mkModuleName "Overloaded.If"
 
 overloadedDoMN :: GHC.ModuleName
 overloadedDoMN =  GHC.mkModuleName "Overloaded.Do"
+
+overloadedCategoriesMN :: GHC.ModuleName
+overloadedCategoriesMN =  GHC.mkModuleName "Overloaded.Categories"
 
 ghcOverloadedLabelsMN :: GHC.ModuleName
 ghcOverloadedLabelsMN =  GHC.mkModuleName "GHC.OverloadedLabels"
