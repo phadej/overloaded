@@ -3,7 +3,6 @@
 -- | Overloaded plugin, which makes magic possible.
 module Overloaded.Plugin (plugin) where
 
-import Control.Applicative    ((<|>))
 import Control.Monad          (foldM, forM, guard, unless, when)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.List              (elemIndex, foldl', intercalate)
@@ -159,8 +158,8 @@ pluginImpl args' env gr = do
     when (opts == defaultOptions) $
         warn dflags noSrcSpan $ GHC.text "No Overloaded features enabled"
 
-    let transformNoOp :: a -> Maybe a
-        transformNoOp _ = Nothing
+    let transformNoOp :: a -> Rewrite a
+        transformNoOp _ = NoRewrite
 
     trStr <- case optStrings of
         NoStr         -> return transformNoOp
@@ -242,8 +241,8 @@ pluginImpl args' env gr = do
             n <- lookupTypeName dflags topEnv vn
             return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    let tr  = trStr /\ trNum /\ trChr /\ trLists /\ trIf /\ trLabel /\ trBrackets /\ trDo /\ trUnit
-    let trT = trTypeNats /\ trTypeSymbols
+    let tr  = trStr <> trNum <> trChr <> trLists <> trIf <> trLabel <> trBrackets <> trDo <> trUnit
+    let trT = trTypeNats <> trTypeSymbols
 
     gr' <- transformType dflags trT gr
     gr'' <- transform dflags tr gr'
@@ -251,11 +250,6 @@ pluginImpl args' env gr = do
     return (env, gr'')
   where
     args = concatMap (splitOn ":") args'
-
-    (/\) :: (a -> Maybe b) -> (a -> Maybe b) -> a -> Maybe b
-    f /\ g = \x -> f x <|> g x
-
-    infixr 9 /\ -- hello CPP
 
 -------------------------------------------------------------------------------
 -- Args parsing
@@ -431,68 +425,82 @@ data OnOff a
   deriving (Eq, Show)
 
 -------------------------------------------------------------------------------
+-- Rewrite
+-------------------------------------------------------------------------------
+
+data Rewrite a
+    = NoRewrite
+    | Rewrite a
+    | Error (GHC.DynFlags -> IO ())
+
+instance Semigroup (Rewrite a) where
+    NoRewrite <> x = x
+    x         <> _ = x
+
+-------------------------------------------------------------------------------
 -- OverloadedStrings
 -------------------------------------------------------------------------------
 
-transformStrings :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) =
-    Just $ hsApps l (hsVar l fromStringName) [e]
+    Rewrite $ hsApps l (hsVar l fromStringName) [e]
 
-transformStrings _ _ = Nothing
+transformStrings _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedSymbols
 -------------------------------------------------------------------------------
 
-transformSymbols :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformSymbols :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformSymbols Names {..} (L l (HsLit _ (HsString _ fs))) = do
     let name' = hsVar l fromSymbolName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
-    Just inner
+    Rewrite inner
 
-transformSymbols _ _ = Nothing
+transformSymbols _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedNumerals
 -------------------------------------------------------------------------------
 
-transformNumerals :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformNumerals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
     | not n, i >= 0 = do
         let name' = hsVar l fromNumeralName
         let inner = hsTyApp l name' (HsTyLit noExtField (HsNumTy GHC.NoSourceText i))
-        Just inner
+        Rewrite inner
 
-transformNumerals _ _ = Nothing
+transformNumerals _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedNaturals
 -------------------------------------------------------------------------------
 
-transformNaturals :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformNaturals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformNaturals Names {..} e@(L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
-    | not n, i >= 0 = do
-    Just $ hsApps l (hsVar l fromNaturalName) [e]
+    | not n
+    , i >= 0
+    = Rewrite $ hsApps l (hsVar l fromNaturalName) [e]
 
-transformNaturals _ _ = Nothing
+transformNaturals _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedChars
 -------------------------------------------------------------------------------
 
-transformChars :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformChars :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformChars Names {..} e@(L l (HsLit _ (HsChar _ _))) =
-    Just $ hsApps l (hsVar l fromCharName) [e]
+    Rewrite $ hsApps l (hsVar l fromCharName) [e]
 
-transformChars _ _ = Nothing
+transformChars _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedLists
 -------------------------------------------------------------------------------
 
-transformLists :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformLists :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformLists Names {..} (L l (ExplicitList _ Nothing xs)) =
-    Just $ foldr cons' nil' xs
+    Rewrite $ foldr cons' nil' xs
   where
     cons' :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
     cons' y ys = hsApps l (hsVar l consName) [y, ys]
@@ -501,63 +509,63 @@ transformLists Names {..} (L l (ExplicitList _ Nothing xs)) =
     nil' = hsVar l nilName
 
     -- otherwise: leave intact
-transformLists _ _ = Nothing
+transformLists _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedIf
 -------------------------------------------------------------------------------
 
-transformIf :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
-transformIf Names {..} (L l (HsIf _ _ co th el)) = Just val4 where
+transformIf :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+transformIf Names {..} (L l (HsIf _ _ co th el)) = Rewrite val4 where
     val4 = L l $ HsApp noExtField val3 el
     val3 = L l $ HsApp noExtField val2 th
     val2 = L l $ HsApp noExtField val1 co
     val1 = L l $ HsVar noExtField $ L l ifteName
-transformIf _ _ = Nothing
+transformIf _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedLabels
 -------------------------------------------------------------------------------
 
-transformLabels :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
     let name' = hsVar l fromLabelName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
-    Just inner
+    Rewrite inner
 
-transformLabels _ _ = Nothing
+transformLabels _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedUnit
 -------------------------------------------------------------------------------
 
-transformUnit :: Names -> LHsExpr GhcRn -> Maybe (LHsExpr GhcRn)
+transformUnit :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformUnit Names {..} (L l (HsVar _ (L _ name')))
-    | name' == ghcUnitName = Just (hsVar l unitName)
+    | name' == ghcUnitName = Rewrite (hsVar l unitName)
   where
     ghcUnitName = GHC.getName (GHC.tupleDataCon GHC.Boxed 0)
 
-transformUnit _ _ = Nothing
+transformUnit _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedTypeNats
 -------------------------------------------------------------------------------
 
-transformTypeNats :: Names -> LHsType GhcRn -> Maybe  (LHsType GhcRn)
+transformTypeNats :: Names -> LHsType GhcRn -> Rewrite (LHsType GhcRn)
 transformTypeNats Names {..} e@(L l (HsTyLit _ (HsNumTy _ _))) = do
     let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeNatName
-    Just $ L l $ HsAppTy noExtField name' e
-transformTypeNats _ _ = Nothing
+    Rewrite $ L l $ HsAppTy noExtField name' e
+transformTypeNats _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedTypeSymbols
 -------------------------------------------------------------------------------
 
-transformTypeSymbols :: Names -> LHsType GhcRn -> Maybe  (LHsType GhcRn)
+transformTypeSymbols :: Names -> LHsType GhcRn -> Rewrite (LHsType GhcRn)
 transformTypeSymbols Names {..} e@(L l (HsTyLit _ (HsStrTy _ _))) = do
     let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeSymbolName
-    Just $ L l $ HsAppTy noExtField name' e
-transformTypeSymbols _ _ = Nothing
+    Rewrite $ L l $ HsAppTy noExtField name' e
+transformTypeSymbols _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- Transform
@@ -565,29 +573,35 @@ transformTypeSymbols _ _ = Nothing
 
 transform
     :: GHC.DynFlags
-    -> (LHsExpr GhcRn -> Maybe (LHsExpr GhcRn))
+    -> (LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn))
     -> HsGroup GhcRn
     -> GHC.TcM (HsGroup GhcRn)
-transform _dflags f = SYB.everywhereM (SYB.mkM transform') where
+transform dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> GHC.TcM (LHsExpr GhcRn)
     transform' e@(L _l _) = do
         -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
         --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
-        return $ case f e of
-            Just e' -> e'
-            Nothing -> e
+        case f e of
+            Rewrite e' -> return e'
+            NoRewrite  -> return e
+            Error err  -> do
+                liftIO $ err dflags
+                fail "Error in Overloaded plugin"
 
 transformType
     :: GHC.DynFlags
-    -> (LHsType GhcRn -> Maybe (LHsType GhcRn))
+    -> (LHsType GhcRn -> Rewrite (LHsType GhcRn))
     -> HsGroup GhcRn
     -> GHC.TcM (HsGroup GhcRn)
-transformType _dflags f = SYB.everywhereM (SYB.mkM transform') where
+transformType dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsType GhcRn -> GHC.TcM (LHsType GhcRn)
     transform' e = do
-        return $ case f e of
-            Just e' -> e'
-            Nothing -> e
+        case f e of
+            Rewrite e' -> return e'
+            NoRewrite  -> return e
+            Error err  -> do
+                liftIO $ err dflags
+                fail "Error in Overloaded plugin"
 
 -------------------------------------------------------------------------------
 -- Constructors
@@ -745,12 +759,13 @@ lookupTypeName dflags env (VN vn mn) = lookupName' dflags env (GHC.mkModuleName 
 -- diagnostics
 -------------------------------------------------------------------------------
 
+putError :: MonadIO m => GHC.DynFlags -> SrcSpan -> GHC.SDoc -> m ()
+putError dflags l doc =
+    liftIO $ GHC.putLogMsg dflags GHC.NoReason GHC.SevError l (GHC.defaultErrStyle dflags) doc
+
 warn :: MonadIO m => GHC.DynFlags -> SrcSpan -> GHC.SDoc -> m ()
 warn dflags l doc =
     liftIO $ GHC.putLogMsg dflags GHC.NoReason GHC.SevWarning l (GHC.defaultErrStyle dflags) doc
-        --     GHC.text "parsed string"
-        --     GHC.$$
-        --     GHC.ppr fs
 
 debug :: MonadIO m => String -> m ()
 -- debug = liftIO . putStrLn
@@ -773,24 +788,27 @@ data V4 a = V4 a a a a
 transformDo
     :: Names
     -> LHsExpr GhcRn
-    -> Maybe (LHsExpr GhcRn)
-transformDo names (L _l (OpApp _ (L (RealSrcSpan l1) (HsVar _ (L _ doName)))
-                                 (L (RealSrcSpan l2) (HsVar _ (L _ compName')))
-                                 (L (RealSrcSpan l3) (HsDo _ DoExpr (L _ stmts)))))
+    -> Rewrite (LHsExpr GhcRn)
+transformDo names (L l (OpApp _ (L (RealSrcSpan l1) (HsVar _ (L _ doName)))
+                                (L (RealSrcSpan l2) (HsVar _ (L _ compName')))
+                                (L (RealSrcSpan l3) (HsDo _ DoExpr (L _ stmts)))))
     | spanNextTo l1 l2
     , spanNextTo l2 l3 
     , compName' == composeName names
-    = Just (transformDo' names doName stmts)
-transformDo _ _ = Nothing
+    = case transformDo' names doName l stmts of
+        Right x  -> Rewrite x
+        Left err -> Error err
+transformDo _ _ = NoRewrite
 
-transformDo' :: Names -> GHC.Name -> [ExprLStmt GhcRn] -> LHsExpr GhcRn
-transformDo' _names _doName [] = error "empty do"
-transformDo'  names  doName (L l (BindStmt _ pat body _ _) : next) =
-    hsApps l bind [ body, kont ]
+transformDo' :: Names -> GHC.Name -> SrcSpan -> [ExprLStmt GhcRn] -> Either (GHC.DynFlags -> IO ()) (LHsExpr GhcRn)
+transformDo' _names _doName l [] = Left $ \dflags ->
+    putError dflags l $ GHC.text "Empty do"
+transformDo'  names  doName _ (L l (BindStmt _ pat body _ _) : next) = do
+    next' <- transformDo' names doName l next
+    return $ hsApps l bind [ body, kont next' ]
   where
     bind  = hsTyApp l (hsVar l doName) (hsTyVar l (doBindName names))
-    next' = transformDo' names doName next
-    kont  = L l $ HsLam noExtField MG
+    kont next' = L l $ HsLam noExtField MG
         { mg_ext    = noExtField
         , mg_alts   = L l $ pure $ L l Match
             { m_ext   = noExtField
@@ -804,13 +822,17 @@ transformDo'  names  doName (L l (BindStmt _ pat body _ _) : next) =
             }
         , mg_origin = Plugins.Generated
         }
-transformDo'  names  doName (L l (BodyStmt _ body _ _) : next) =
-    hsApps l then_ [ body, next' ]
+transformDo'  names  doName _ (L l (BodyStmt _ body _ _) : next) = do
+    next' <- transformDo' names doName l next
+    return $ hsApps l then_ [ body, next' ]
   where
     then_ = hsTyApp l (hsVar l doName) (hsTyVar l (doThenName names))
-    next' = transformDo' names doName next
-transformDo' _ _ (L _ (LastStmt _ body _ _) : []) = body
-transformDo' _ _ (x : _) = error ("Unsupported statement in do: " ++ SYB.gshow x)
+
+transformDo' _ _ _ [L _ (LastStmt _ body _ _)] = return body
+transformDo' _ _ _ (L l stmt : _) = Left $ \dflags ->
+    putError dflags l $ GHC.text "Unsupported statement in do"
+        GHC.$$ GHC.ppr stmt
+        GHC.$$ GHC.text (SYB.gshow stmt)
 
 spanNextTo :: RealSrcSpan -> RealSrcSpan -> Bool
 spanNextTo x y
@@ -824,10 +846,10 @@ spanNextTo x y
 transformIdiomBrackets
     :: Names
     -> LHsExpr GhcRn
-    -> Maybe (LHsExpr GhcRn)
+    -> Rewrite (LHsExpr GhcRn)
 transformIdiomBrackets names (L _l (HsRnBracketOut _ (ExpBr _ e) _))
-    = Just (transformIdiomBrackets' names e)
-transformIdiomBrackets _ _ = Nothing
+    = Rewrite (transformIdiomBrackets' names e)
+transformIdiomBrackets _ _ = NoRewrite
 
 transformIdiomBrackets'
     :: Names
