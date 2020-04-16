@@ -1,4 +1,3 @@
 with-compiler: ghc-8.6.5
 packages: .
 tests:  True
-packages: https://hackage.haskell.org/package/optics-core-0.3/candidate/optics-core-0.3.tar.gz

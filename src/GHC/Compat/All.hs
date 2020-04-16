@@ -3,10 +3,7 @@ module GHC.Compat.All (
 module X,
 -- * Extras
 mkFunTy,
-hsTyApp,
 ) where
-
-import GHC.Compat.Expr
 
 #if MIN_VERSION_ghc(8,10,0)
 import Constraint as X
@@ -53,11 +50,4 @@ mkFunTy =
     GHC.mkFunTy X.VisArg
 #else
     GHC.mkFunTy
-#endif
-
-hsTyApp :: SrcSpan -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
-#if MIN_VERSION_ghc(8,8,0)
-hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
-#else
-hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
 #endif

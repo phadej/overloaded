@@ -50,6 +50,13 @@ library
   other-modules:
     GHC.Compat.All
     GHC.Compat.Expr
+    Overloaded.Plugin.Diagnostics
+    Overloaded.Plugin.HasField
+    Overloaded.Plugin.IdiomBrackets
+    Overloaded.Plugin.LocalDo
+    Overloaded.Plugin.Names
+    Overloaded.Plugin.Rewrite
+    Overloaded.Plugin.V
 
   -- GHC boot dependencies
   build-depends:

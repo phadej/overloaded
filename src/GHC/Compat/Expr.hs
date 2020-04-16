@@ -14,6 +14,11 @@ module GHC.Compat.Expr (
     GRHS (..),
     HsMatchContext (..),
     HsLocalBindsLR (..),
+    -- ** Constructors
+    hsVar,
+    hsApps,
+    hsTyApp, 
+    hsTyVar,
     -- * Literals
     HsLit (..),
     HsTyLit (..),
@@ -56,11 +61,32 @@ import HsSyn
 import BasicTypes (PromotionFlag (..))
 #endif
 
+import Data.List (foldl')
 import SrcLoc
        (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
        srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
 
+import qualified Name as GHC
+
 #if !(MIN_VERSION_ghc(8,10,0))
 noExtField  :: NoExt
 noExtField = noExt
+#endif
+
+hsVar :: SrcSpan -> GHC.Name -> LHsExpr GhcRn
+hsVar l n = L l (HsVar noExtField (L l n))
+
+hsTyVar :: SrcSpan -> GHC.Name -> HsType GhcRn
+hsTyVar l n = HsTyVar noExtField NotPromoted (L l n)
+
+hsApps :: SrcSpan -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
+hsApps l = foldl' app where
+    app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+    app f x = L l (HsApp noExtField f x)
+
+hsTyApp :: SrcSpan -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
+#if MIN_VERSION_ghc(8,8,0)
+hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
+#else
+hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
 #endif

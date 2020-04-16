@@ -96,8 +96,6 @@ install:
   - echo 'package overloaded' >> cabal.project
   - "echo '  ghc-options: -Werror=missing-methods' >> cabal.project"
   - |
-    echo "packages:"                                                                              >> cabal.project
-    echo "  https://hackage.haskell.org/package/optics-core-0.3/candidate/optics-core-0.3.tar.gz" >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(overloaded)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true
@@ -125,8 +123,6 @@ script:
   - echo 'package overloaded' >> cabal.project
   - "echo '  ghc-options: -Werror=missing-methods' >> cabal.project"
   - |
-    echo "packages:"                                                                              >> cabal.project
-    echo "  https://hackage.haskell.org/package/optics-core-0.3/candidate/optics-core-0.3.tar.gz" >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(overloaded)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true
