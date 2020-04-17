@@ -16,9 +16,9 @@
 -- The 'arr' combinator is used for plumbing. We should desugar to proper
 -- type-classes:
 --
--- * 'CategoryProduct', not 'Arrow'
--- * 'CategoryCoproduct', not 'ArrowChoice' (not implemented yet)
--- * 'CategoryExponential', not 'ArrowApply' (not implemented yet)
+-- * 'CartesianCategory', not 'Arrow'
+-- * 'CocartesianCategory', not 'ArrowChoice' (not implemented yet)
+-- * 'CCC', not 'ArrowApply' (not implemented yet)
 --
 -- == Examples
 --
@@ -26,7 +26,7 @@
 --
 -- @
 -- catAssoc
---     :: 'CategoryProduct' cat
+--     :: 'CartesianCategory' cat
 --     => cat ('Product' cat ('Product' cat a b) c) ('Product' cat a ('Product' cat b c))
 -- catAssoc = proc ((x, y), z) -> 'identity' -< (x, (y, z))
 -- @
@@ -111,9 +111,9 @@ module Overloaded.Categories (
     C.Category,
     identity,
     (##),
-    CategoryProduct (..),
-    CategoryCoproduct (..),
-    CategoryExponential (..),
+    CartesianCategory (..),
+    CocartesianCategory (..),
+    CCC (..),
     ) where
 
 import qualified Control.Category as C
@@ -139,10 +139,20 @@ identity = C.id
 infixr 9 ##
 
 -------------------------------------------------------------------------------
+-- Monoidal
+-------------------------------------------------------------------------------
+
+-- TODO
+
+-------------------------------------------------------------------------------
 -- Product
 -------------------------------------------------------------------------------
 
-class C.Category cat => CategoryProduct (cat :: k -> k -> Type) where
+-- | 'Cartesian' category is a monoidal category
+-- where monoidal product is the categorical product.
+--
+-- TODO: we don't have terminal object in this definition.
+class C.Category cat => CartesianCategory (cat :: k -> k -> Type) where
     type Product cat :: k -> k -> k
 
     proj1 :: cat (Product cat a b) a
@@ -150,7 +160,7 @@ class C.Category cat => CategoryProduct (cat :: k -> k -> Type) where
 
     fanout :: cat a b -> cat a c -> cat a (Product cat b c)
 
-instance CategoryProduct (->) where
+instance CartesianCategory (->) where
     type Product (->) = (,)
 
     proj1 = fst
@@ -161,7 +171,10 @@ instance CategoryProduct (->) where
 -- Coproduct
 -------------------------------------------------------------------------------
 
-class C.Category cat => CategoryCoproduct (cat :: k -> k -> Type) where
+-- | 'Cartesian' category is a monoidal category
+-- where monoidal product is the categorical coproduct.
+--
+class C.Category cat => CocartesianCategory (cat :: k -> k -> Type) where
     type Coproduct cat :: k -> k -> k
 
     inl :: cat a (Coproduct cat a b)
@@ -169,7 +182,7 @@ class C.Category cat => CategoryCoproduct (cat :: k -> k -> Type) where
 
     fanin :: cat a c -> cat b c -> cat (Coproduct cat a b) c
 
-instance CategoryCoproduct (->) where
+instance CocartesianCategory (->) where
     type Coproduct (->) = Either
 
     inl = Left
@@ -180,7 +193,9 @@ instance CategoryCoproduct (->) where
 -- Exponential
 -------------------------------------------------------------------------------
 
-class CategoryProduct cat => CategoryExponential (cat :: k -> k -> Type) where
+-- | Closed cartesian category.
+--
+class CartesianCategory cat => CCC (cat :: k -> k -> Type) where
     -- | @'Exponential cat a b'@ represents \(B^A\). This is due how (->) works.
     type Exponential cat :: k -> k -> k
 
@@ -188,7 +203,7 @@ class CategoryProduct cat => CategoryExponential (cat :: k -> k -> Type) where
 
     transpose :: cat (Product cat a b) c -> cat a (Exponential cat b c)
 
-instance CategoryExponential (->) where
+instance CCC (->) where
     type Exponential (->) = (->)
 
     eval      = uncurry ($)

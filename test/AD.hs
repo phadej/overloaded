@@ -19,7 +19,7 @@ instance Category AD where
 linearD :: (a -> b) -> AD a b
 linearD f = AD $ \x -> (f x, f)
 
-instance CategoryProduct AD where
+instance CartesianCategory AD where
     type Product AD = (,) 
 
     proj1 = linearD fst

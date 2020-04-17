@@ -63,7 +63,7 @@ tests = testGroup "Categories"
     ]
 
 catAssoc
-    :: CategoryProduct cat
+    :: CartesianCategory cat
     => cat (Product cat (Product cat a b) c) (Product cat a (Product cat b c))
 catAssoc = proc ((x, y), z) -> identity -< (x, (y, z))
 

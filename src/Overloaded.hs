@@ -42,9 +42,9 @@ module Overloaded (
     Category,
     identity,
     (##),
-    CategoryProduct (..),
-    CategoryCoproduct (..),
-    CategoryExponential (..),
+    CartesianCategory (..),
+    CocartesianCategory (..),
+    CCC (..),
 
     -- * Overloaded:RecordFields
     -- | See "GHC.Records.Compat"  from @record-hasfield@ package.
