@@ -85,6 +85,8 @@ parseExpr
     -> Map GHC.Name b
     -> LHsExpr GhcRn
     -> Rewrite (Expression (Var b a))
+parseExpr names ctx (L _ (HsPar _ expr)) =
+    parseExpr names ctx expr
 parseExpr _     ctx (L _ (HsVar _ (L l name))) =
     case Map.lookup name ctx of
         Nothing -> Error $ \dflags ->
@@ -121,11 +123,58 @@ parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsFirstOrderApp _)) = do
     morp' <- parseTerm names morp
     expr' <- parseExpr names ctx expr
     return $ Last morp' expr'
+parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
+    case mg_alts matchGroup of
+#if MIN_VERSION_ghc(8,8,0) && !MIN_VERSION_ghc(8,10,1)
+        L _ [ L _ Match { m_pats = [XPat (L _ (ConPatIn (L _ acon) aargs))], m_grhss = abody' }
+            , L _ Match { m_pats = [XPat (L _ (ConPatIn (L _ bcon) bargs))], m_grhss = bbody' }
+            ]
+#else
+        L _ [ L _ Match { m_pats = [L _ (ConPatIn (L _ acon) aargs)], m_grhss = abody' }
+            , L _ Match { m_pats = [L _ (ConPatIn (L _ bcon) bargs)], m_grhss = bbody' }
+            ]
+#endif
+            -- Left and Right, or Right and Left
+            |  [acon,bcon] == [conLeftName names,conRightName names]
+            || [acon,bcon] == [conRightName names,conLeftName names]
+            -- only one argument
+            , [aarg] <- hsConPatArgs aargs
+            , [barg] <- hsConPatArgs bargs
+            -- and simple bodies
+            , Just abody <- simpleGRHSs abody'
+            , Just bbody <- simpleGRHSs bbody'
+
+            -> do
+                expr' <- parseExpr names ctx expr
+
+                SomePattern apat <- parsePat aarg
+                SomePattern bpat <- parsePat barg
+
+                acont <- parseCmd names (combineMaps ctx apat) abody
+                bcont <- parseCmd names (combineMaps ctx bpat) bbody
+
+                -- Error $ \dflags -> putError dflags noSrcSpan $ GHC.text "TODO"
+                --     GHC.$$ GHC.ppr acon
+                --     GHC.$$ GHC.ppr bcon
+                --     GHC.$$ GHC.ppr aarg
+                --     GHC.$$ GHC.ppr barg
+                --     GHC.$$ GHC.ppr abody
+                --     GHC.$$ GHC.ppr bbody
+
+                return $ caseCont expr' apat bpat (second assoc acont) (second assoc bcont)
+
+        L l _ -> Error $ \dflags ->
+            putError dflags l $ GHC.text "Overloaded:Categories only case of Left and Right are supported"
+                GHC.$$ GHC.text (SYB.gshow (mg_alts matchGroup))
 parseCmd _     _   (L l cmd) =
     Error $ \dflags ->
         putError dflags l $ GHC.text "Unsupported command in proc for Overloaded:Categories"
             GHC.$$ GHC.ppr cmd
             GHC.$$ GHC.text (SYB.gshow cmd)
+
+simpleGRHSs :: GRHSs GhcRn body -> Maybe body
+simpleGRHSs (GRHSs _ [L _ (GRHS _ [] body)] (L _ (EmptyLocalBinds _))) = Just body
+simpleGRHSs _ = Nothing
 
 parseTerm
     :: Names
@@ -207,11 +256,25 @@ data Continuation term a where
         -> Continuation term a
       -- ^ x <- term -< y
 
+    Split
+        :: Expression a
+        -> Pattern shA String
+        -> Pattern shB String
+        -> Continuation term (Var (Index shA) a)
+        -> Continuation term (Var (Index shB) a)
+        -> Continuation term a
+
 deriving instance (Show a, Show term) => Show (Continuation term a)
 
 instance Bifunctor Continuation where
-    bimap f g (Last term e)     = Last (fmap f term) (fmap g e)
-    bimap f g (Edge p term e c) = Edge p (fmap f term) (fmap g e) (bimap f (fmap g) c)
+    bimap f g (Last term e)         = Last (fmap f term) (fmap g e)
+    bimap f g (Edge p term e c)     = Edge p (fmap f term) (fmap g e) (bimap f (fmap g) c)
+    bimap f g (Split e pa pb ca cb) = Split (fmap g e) pa pb
+        (bimap f (fmap g) ca)
+        (bimap f (fmap g) cb)
+
+instance Functor (Continuation term) where
+    fmap = second
 
 compCont
     :: Pattern sh String
@@ -222,7 +285,24 @@ compCont pat (Last term expr) c
     = Edge pat term expr c
 compCont pat (Edge pat' term expr c') c
     = Edge pat' term expr
-    $ compCont pat c' (second (unvar B (F . F)) c)
+    $ compCont pat c' (weaken1 c)
+compCont pat (Split expr patA patB contA contB) c
+    = Split expr patA patB
+        (compCont pat contA (weaken1 c))
+        (compCont pat contB (weaken1 c))
+
+weaken1 :: Functor f => f (Var a b) -> f (Var a (Var c b))
+weaken1 = fmap (unvar B (F . F))
+
+caseCont
+    :: Expression a
+    -> Pattern shA Plugins.Name
+    -> Pattern shB Plugins.Name
+    -> Continuation (LHsExpr GhcRn) (Var (Index shA) a)
+    -> Continuation (LHsExpr GhcRn) (Var (Index shB) a)
+    -> Continuation (LHsExpr GhcRn) a
+caseCont e patA patB =
+    Split e (fmap nameToString patA) (fmap nameToString patB)
 
 -------------------------------------------------------------------------------
 -- Patterns
@@ -285,16 +365,19 @@ data Morphism term
     | MProj2
     | MInL
     | MInR
-    -- | MCase ...
+    | MCase (Morphism term) (Morphism term)
+    | MDistr
     | MTerm term
   deriving (Show, Functor)
 
 instance Semigroup (Morphism term) where
-    MId <> m = m
-    m <> MId = m
-    MProj1 <> MProduct f _ = f
-    MProj2 <> MProduct _ g = g
-    f <> g   = MCompose f g
+    MId       <> m            = m
+    m         <> MId          = m
+    MProj1    <> MProduct f _ = f
+    MProj2    <> MProduct _ g = g
+    MCase f _ <> MInL         = f
+    MCase _ g <> MInR         = g
+    f         <> g            = MCompose f g
 
 instance Monoid (Morphism term) where
     mempty  = MId
@@ -316,6 +399,15 @@ desugarC ctx (Edge p term e k) = mconcat
         (term <> desugarE ctx e)
         MId
     ]
+desugarC ctx (Split e pa pb ka kb) = mconcat
+    [ MCase
+        (desugarC (unvar (\x -> desugarP pa x <> MProj1) (\y -> ctx y <> MProj2)) ka)
+        (desugarC (unvar (\x -> desugarP pb x <> MProj1) (\y -> ctx y <> MProj2)) kb)
+    , MDistr
+    , MProduct
+        (desugarE ctx e)
+        MId
+    ]
 
 desugarP :: Pattern sh name -> Index sh -> Morphism term
 desugarP (PatternVar _)     Here    = MId
@@ -327,8 +419,8 @@ desugarE :: (a -> Morphism term) -> Expression a -> Morphism term
 desugarE ctx = go where
     go (ExpressionVar a)     = ctx a
     go (ExpressionTuple x y) = MProduct (go x) (go y)
-    go (ExpressionLeft x)    = go x <> MInL
-    go (ExpressionRight y)   = go y <> MInR
+    go (ExpressionLeft x)    = MInL <> go x
+    go (ExpressionRight y)   = MInR <> go y
 
 -------------------------------------------------------------------------------
 -- Generating
@@ -344,3 +436,5 @@ generate Names {..} = go where
     go (MProduct f g) = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFanoutName) [go f, go g]
     go MInL           = hsVar noSrcSpan catInlName
     go MInR           = hsVar noSrcSpan catInrName
+    go MDistr         = hsVar noSrcSpan catDistrName
+    go (MCase f g)    = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFaninName) [go f, go g]

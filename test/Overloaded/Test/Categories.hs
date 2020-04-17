@@ -4,6 +4,7 @@
 module Overloaded.Test.Categories where
 
 import Data.Bifunctor.Assoc  (assoc)
+import Data.Bifunctor.Swap (swap)
 import Test.QuickCheck       ((===))
 import Test.QuickCheck.Poly  (A, B, C)
 import Test.Tasty            (TestTree, testGroup)
@@ -55,14 +56,21 @@ tests = testGroup "Categories"
             lhs test @?= rhs test
 
         ]
-    , testProperty "assoc (->)" $ \a b c ->
-        let abc = ((a, b), c) :: ((A, B), C)
-        in assoc abc === catAssoc abc
+    , testProperty "assoc (->)" $ \abc ->
+        assoc abc === catAssoc (abc :: ((A, B), C))
 
     , testCase "assoc Mapping" $ do
         let M rhs = catAssoc
             lhs = "Lam (Pair (Fst (Fst (Var Here))) (Pair (Snd (Fst (Var Here))) (Snd (Var Here))))"
         -- writing Eq instance for Term is not nice :)
+        show rhs @?= lhs
+
+    , testProperty "assocCo (->)" $ \abc ->
+        assoc abc === catAssocCo (abc :: Either (Either A B) C)
+
+    , testCase "assocCo Mapping" $ do
+        let M rhs = catAssocCo
+            lhs = "Lam (Case (Case (InL (Var Here)) (InR (InL (Var Here))) (Var Here)) (InR (InR (Var Here))) (Var Here))"
         show rhs @?= lhs
 
     , testCase "AD" $ do
@@ -75,17 +83,38 @@ catAssoc
     => cat (Product cat (Product cat a b) c) (Product cat a (Product cat b c))
 catAssoc = proc ((x, y), z) -> identity -< (x, (y, z))
 
--- catAssoc2
---     :: CocartesianCategory cat
---     => cat (Coproduct cat (Coproduct cat a b) c) (Coproduct cat a (Coproduct cat b c))
--- catAssoc2 = proc xyz -> case xyz of
---     Left xy     -> case xyz of
---         Left x  -> identity -< Left x
---         Right y -> identity -< Left (Right y)
---     Right z     -> identity -< Right (Right z)
+catSwapCo
+    :: BicartesianCategory cat
+    => cat (Coproduct cat a b) (Coproduct cat b a)
+-- catSwapCo =
+--     fanin (inr ## proj1) (inl ## proj1) ## (distr ## fanout identity identity)
+catSwapCo = proc xy -> case xy of
+    Left x  -> identity -< Right x
+    Right y -> identity -< Left y
+
+catAssocCo
+     :: BicartesianCategory cat
+     => cat (Coproduct cat (Coproduct cat a b) c) (Coproduct cat a (Coproduct cat b c))
+catAssocCo = proc xyz -> case xyz of
+    Left xy     -> case xy of
+        Left x  -> identity -< Left x
+        Right y -> identity -< Right (Left y)
+    Right z     -> identity -< Right (Right z)
 
 quad :: Num a => AD (a, a) a
 quad = proc (x, y) -> do
     x2 <- mult -< (x, x)
     y2 <- mult -< (y, y)
     plus -< (x2, y2)
+
+-------------------------------------------------------------------------------
+-- Errors
+-------------------------------------------------------------------------------
+
+-- err01 = proc x -> case x of
+--     Left z -> identity -< z
+
+err01 :: BicartesianCategory cat => cat (Coproduct cat a a) a
+err01 = proc z -> case z of
+    Right x -> identity -< x
+    Left y -> identity -< y

@@ -59,6 +59,9 @@ var1 = Var (There Here)
 weakenTerm :: Term ctx b -> Term (a ': ctx) b
 weakenTerm = weakenTerm' SNil Proxy Proxy
 
+weakenTerm1 :: Term (b ': ctx) c -> Term (b ': a ': ctx) c
+weakenTerm1 = weakenTerm' (SCons SNil) Proxy Proxy
+
 weakenTerm2 :: Term ctx b -> Term (a ': a' ': ctx) b
 weakenTerm2 = weakenTerm . weakenTerm
 
@@ -118,6 +121,13 @@ tsnd p          = Snd p
 tcase :: Term (a ': ctx) c -> Term (b ':  ctx) c -> Term ctx ('TyCoproduct a b) -> Term ctx c
 tcase l _ (InL x) = subst SNil Proxy l x
 tcase _ r (InR x) = subst SNil Proxy r x
+
+-- case-of-case
+tcase l r (Case l' r' p) = tcase
+    (tcase (weakenTerm1 l) (weakenTerm1 r) l')
+    (tcase (weakenTerm1 l) (weakenTerm1 r) r')
+    p
+
 tcase l r p       = Case l r p
 
 -------------------------------------------------------------------------------
@@ -211,10 +221,16 @@ instance CocartesianCategory (Mapping ctx) where
 
     inl = M $ Lam $ InL var0
     inr = M $ Lam $ InR var0
-    fanin (M f) (M g) = M $ Lam $ Case
+    fanin (M f) (M g) = M $ Lam $ tcase
         (App (weakenTerm2 f) var0)
         (App (weakenTerm2 g) var0)
         var0
+
+instance BicartesianCategory (Mapping ctx) where
+    distr = M $ Lam $ tcase
+        (InL (Pair var0 (Snd var1)))
+        (InR (Pair var0 (Snd var1)))
+        (Fst var0)
 
 -- |
 --
