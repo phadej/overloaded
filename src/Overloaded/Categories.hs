@@ -17,7 +17,7 @@
 -- type-classes:
 --
 -- * 'CartesianCategory', not 'Arrow'
--- * 'CocartesianCategory', not 'ArrowChoice' (not implemented yet)
+-- * 'CocartesianCategory', not 'ArrowChoice' (implementation relies on 'BicartesianCategory')
 -- * 'CCC', not 'ArrowApply' (not implemented yet)
 --
 -- == Examples
@@ -113,6 +113,7 @@ module Overloaded.Categories (
     (##),
     CartesianCategory (..),
     CocartesianCategory (..),
+    BicartesianCategory (..),
     CCC (..),
     ) where
 
@@ -148,7 +149,7 @@ infixr 9 ##
 -- Product
 -------------------------------------------------------------------------------
 
--- | 'Cartesian' category is a monoidal category
+-- | Cartesian category is a monoidal category
 -- where monoidal product is the categorical product.
 --
 -- TODO: we don't have terminal object in this definition.
@@ -171,7 +172,7 @@ instance CartesianCategory (->) where
 -- Coproduct
 -------------------------------------------------------------------------------
 
--- | 'Cartesian' category is a monoidal category
+-- | Cocartesian category is a monoidal category
 -- where monoidal product is the categorical coproduct.
 --
 class C.Category cat => CocartesianCategory (cat :: k -> k -> Type) where
@@ -188,6 +189,18 @@ instance CocartesianCategory (->) where
     inl = Left
     inr = Right
     fanin = either
+
+-- | Bicartesian category is category which is
+-- both cartesian and cocartesian.
+--
+-- We also require distributive morpism.
+class (CartesianCategory cat, CocartesianCategory cat) => BicartesianCategory cat where
+    distr :: cat (Product cat (Coproduct cat a b) c)
+                 (Coproduct cat (Product cat a c) (Product cat b c))
+
+instance BicartesianCategory (->) where
+    distr (Left x,  z) = Left (x, z)
+    distr (Right y, z) = Right (y, z)
 
 -------------------------------------------------------------------------------
 -- Exponential

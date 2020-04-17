@@ -17,10 +17,12 @@ module GHC.Compat.Expr (
     -- ** Constructors
     hsVar,
     hsApps,
-    hsTyApp, 
+    hsTyApp,
     hsTyVar,
     hsPar,
     hsOpApp,
+    -- * Accessors
+    hsConPatArgs,
     -- * Patterns
     LPat,
     Pat (..),

@@ -44,6 +44,7 @@ module Overloaded (
     (##),
     CartesianCategory (..),
     CocartesianCategory (..),
+    BicartesianCategory (..),
     CCC (..),
 
     -- * Overloaded:RecordFields
