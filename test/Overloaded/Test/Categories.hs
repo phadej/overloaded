@@ -46,6 +46,14 @@ tests = testGroup "Categories"
                 rhs = fst . fst
                 test = (('x', 'y'), 'z')
             lhs test @?= rhs test
+
+        , testCase "Coproduct expression" $ do
+            let lhs = proc x -> identity -< Left x
+                rhs :: a -> Either a ()
+                rhs = Left
+                test = 'x'
+            lhs test @?= rhs test
+
         ]
     , testProperty "assoc (->)" $ \a b c ->
         let abc = ((a, b), c) :: ((A, B), C)
@@ -66,6 +74,15 @@ catAssoc
     :: CartesianCategory cat
     => cat (Product cat (Product cat a b) c) (Product cat a (Product cat b c))
 catAssoc = proc ((x, y), z) -> identity -< (x, (y, z))
+
+-- catAssoc2
+--     :: CocartesianCategory cat
+--     => cat (Coproduct cat (Coproduct cat a b) c) (Coproduct cat a (Coproduct cat b c))
+-- catAssoc2 = proc xyz -> case xyz of
+--     Left xy     -> case xyz of
+--         Left x  -> identity -< Left x
+--         Right y -> identity -< Left (Right y)
+--     Right z     -> identity -< Right (Right z)
 
 quad :: Num a => AD (a, a) a
 quad = proc (x, y) -> do

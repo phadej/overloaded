@@ -45,6 +45,11 @@ data Names = Names
     , catProj1Name       :: GHC.Name
     , catProj2Name       :: GHC.Name
     , catFanoutName      :: GHC.Name
+    , catInlName         :: GHC.Name
+    , catInrName         :: GHC.Name
+    , catFaniName        :: GHC.Name
+    , conLeftName        :: GHC.Name
+    , conRightName       :: GHC.Name
     }
 
 getNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.TcM Names
@@ -80,6 +85,12 @@ getNames dflags env = do
     catProj1Name    <- lookupName dflags env overloadedCategoriesMN "proj1"
     catProj2Name    <- lookupName dflags env overloadedCategoriesMN "proj2"
     catFanoutName   <- lookupName dflags env overloadedCategoriesMN "fanout"
+    catInlName      <- lookupName dflags env overloadedCategoriesMN "inl"
+    catInrName      <- lookupName dflags env overloadedCategoriesMN "inr"
+    catFaninName    <- lookupName dflags env overloadedCategoriesMN "fanin"
+
+    conLeftName  <- lookupNameDataCon dflags env dataEitherMN "Left"
+    conRightName <- lookupNameDataCon dflags env dataEitherMN "Right"
 
     return Names {..}
 
@@ -88,6 +99,15 @@ lookupName dflags env mn vn = do
     res <-  liftIO $ GHC.findImportedModule env mn Nothing
     case res of
         GHC.Found _ md -> GHC.lookupOrig md (GHC.mkVarOcc vn)
+        _              -> do
+            putError dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
+            fail "panic!"
+
+lookupNameDataCon :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
+lookupNameDataCon dflags env mn vn = do
+    res <-  liftIO $ GHC.findImportedModule env mn Nothing
+    case res of
+        GHC.Found _ md -> GHC.lookupOrig md (GHC.mkDataOcc vn)
         _              -> do
             putError dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             fail "panic!"
@@ -159,3 +179,6 @@ ghcBaseMN = GHC.mkModuleName "GHC.Base"
 
 dataFunctorMN :: GHC.ModuleName
 dataFunctorMN = GHC.mkModuleName "Data.Functor"
+
+dataEitherMN :: GHC.ModuleName
+dataEitherMN = GHC.mkModuleName "Data.Either"

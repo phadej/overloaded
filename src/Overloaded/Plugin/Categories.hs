@@ -81,21 +81,31 @@ parsePat' l pat = Error $ \dflags ->
         GHC.$$ GHC.text (SYB.gshow pat)
 
 parseExpr
-    :: Map GHC.Name b
+    :: Names
+    -> Map GHC.Name b
     -> LHsExpr GhcRn
     -> Rewrite (Expression (Var b a))
-parseExpr ctx (L _ (HsVar _ (L l name))) =
+parseExpr _     ctx (L _ (HsVar _ (L l name))) =
     case Map.lookup name ctx of
         Nothing -> Error $ \dflags ->
             putError dflags l $ GHC.text "Unbound variable" GHC.<+> GHC.ppr name
         Just b -> return $ ExpressionVar (B b)
-parseExpr ctx (L _ (ExplicitTuple _ [L _ (Present _ x), L _ (Present _ y)] Plugins.Boxed)) = do
-    x' <- parseExpr ctx x
-    y' <- parseExpr ctx y
+parseExpr names ctx (L _ (ExplicitTuple _ [L _ (Present _ x), L _ (Present _ y)] Plugins.Boxed)) = do
+    x' <- parseExpr names ctx x
+    y' <- parseExpr names ctx y
     return (ExpressionTuple x' y')
-parseExpr _ (L l ExplicitTuple {}) = Error $ \dflags ->
+parseExpr _     _ (L l ExplicitTuple {}) = Error $ \dflags ->
     putError dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
-parseExpr _   (L l expr) = Error $ \dflags ->
+parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
+    | fName == conLeftName names = do
+        x' <- parseExpr names ctx x
+        return (ExpressionLeft x')
+    | fName == conRightName names = do
+        x' <- parseExpr names ctx x
+        return (ExpressionRight x')
+    | otherwise = Error $ \dflags ->
+        putError dflags l $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
+parseExpr _     _   (L l expr) = Error $ \dflags ->
     putError dflags l $ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
         GHC.$$ GHC.ppr expr
         GHC.$$ GHC.text (SYB.gshow expr)
@@ -109,7 +119,7 @@ parseCmd names ctx (L _ (HsCmdDo _ (L l stmts))) =
     parseStmts names ctx l stmts
 parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsFirstOrderApp _)) = do
     morp' <- parseTerm names morp
-    expr' <- parseExpr ctx expr
+    expr' <- parseExpr names ctx expr
     return $ Last morp' expr'
 parseCmd _     _   (L l cmd) =
     Error $ \dflags ->
@@ -258,6 +268,8 @@ combineMaps m pat = Map.union (Map.map F m) (Map.map B (patternMap pat))
 data Expression a
     = ExpressionVar a
     | ExpressionTuple (Expression a) (Expression a)
+    | ExpressionLeft (Expression a)
+    | ExpressionRight (Expression a)
   deriving (Show, Functor)
 
 -------------------------------------------------------------------------------
@@ -271,6 +283,9 @@ data Morphism term
     | MProduct (Morphism term) (Morphism term)
     | MProj1
     | MProj2
+    | MInL
+    | MInR
+    -- | MCase ...
     | MTerm term
   deriving (Show, Functor)
 
@@ -310,8 +325,10 @@ desugarP (PatternTuple _ r) (InR i) = desugarP r i <> MProj2
 
 desugarE :: (a -> Morphism term) -> Expression a -> Morphism term
 desugarE ctx = go where
-    go (ExpressionVar a) = ctx a
+    go (ExpressionVar a)     = ctx a
     go (ExpressionTuple x y) = MProduct (go x) (go y)
+    go (ExpressionLeft x)    = go x <> MInL
+    go (ExpressionRight y)   = go y <> MInR
 
 -------------------------------------------------------------------------------
 -- Generating
@@ -325,3 +342,5 @@ generate Names {..} = go where
     go MProj1         = hsVar noSrcSpan catProj1Name
     go MProj2         = hsVar noSrcSpan catProj2Name
     go (MProduct f g) = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFanoutName) [go f, go g]
+    go MInL           = hsVar noSrcSpan catInlName
+    go MInR           = hsVar noSrcSpan catInrName
