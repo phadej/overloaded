@@ -49,6 +49,7 @@ data Names = Names
     , catInrName         :: GHC.Name
     , catFaninName       :: GHC.Name
     , catDistrName       :: GHC.Name
+    , catEvalName        :: GHC.Name
     , conLeftName        :: GHC.Name
     , conRightName       :: GHC.Name
     }
@@ -90,6 +91,7 @@ getNames dflags env = do
     catInrName      <- lookupName dflags env overloadedCategoriesMN "inr"
     catFaninName    <- lookupName dflags env overloadedCategoriesMN "fanin"
     catDistrName    <- lookupName dflags env overloadedCategoriesMN "distr"
+    catEvalName     <- lookupName dflags env overloadedCategoriesMN "eval"
 
     conLeftName  <- lookupNameDataCon dflags env dataEitherMN "Left"
     conRightName <- lookupNameDataCon dflags env dataEitherMN "Right"

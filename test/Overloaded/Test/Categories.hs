@@ -73,6 +73,11 @@ tests = testGroup "Categories"
             lhs = "Lam (Case (Case (InL (Var Here)) (InR (InL (Var Here))) (Var Here)) (InR (InR (Var Here))) (Var Here))"
         show rhs @?= lhs
 
+    , testCase "uncurry Mapping" $ do
+        let M rhs = catUncurry
+            lhs = "Lam (Lam (App (App (Var (There Here)) (Fst (Var Here))) (Snd (Var Here))))"
+        show rhs @?= lhs
+
     , testCase "AD" $ do
         evaluateAD quad (0, 0) [(1,0), (0,1), (1, 1)] @?= (0 :: Int, [0,0,0])
         evaluateAD quad (1, 2) [(1,0), (0,1), (1, 1)] @?= (5 :: Int, [2,4,6])
@@ -101,6 +106,14 @@ catAssocCo = proc xyz -> case xyz of
         Right y -> identity -< Right (Left y)
     Right z     -> identity -< Right (Right z)
 
+catUncurry
+    :: CCC cat
+    => cat (Exponential cat a (Exponential cat b c))
+           (Exponential cat (Product cat a b) c)
+catUncurry = transpose $ proc (f, (a, b)) -> do
+    bc <- f -<< a
+    bc -<< b
+    
 quad :: Num a => AD (a, a) a
 quad = proc (x, y) -> do
     x2 <- mult -< (x, x)

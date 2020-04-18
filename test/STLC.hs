@@ -222,8 +222,8 @@ instance CocartesianCategory (Mapping ctx) where
     inl = M $ Lam $ InL var0
     inr = M $ Lam $ InR var0
     fanin (M f) (M g) = M $ Lam $ tcase
-        (App (weakenTerm2 f) var0)
-        (App (weakenTerm2 g) var0)
+        (app (weakenTerm2 f) var0)
+        (app (weakenTerm2 g) var0)
         var0
 
 instance BicartesianCategory (Mapping ctx) where
@@ -249,9 +249,9 @@ ex03mapping = ex03
 instance CCC (Mapping ctx) where
     type Exponential (Mapping ctx) = 'TyFun
 
-    eval = M $ Lam $ App (Fst var0) (Snd var0)
+    eval = M $ Lam $ app (Fst var0) (Snd var0)
 
-    transpose (M f) = M $ Lam $ Lam $ App (weakenTerm2 f) (Pair var1 var0)
+    transpose (M f) = M $ Lam $ Lam $ app (weakenTerm2 f) (Pair var1 var0)
 
 -- |
 --
