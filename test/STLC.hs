@@ -10,6 +10,7 @@ module STLC where
 import Data.Kind             (Type)
 import Data.Proxy            (Proxy (..))
 import Overloaded.Categories
+import Numeric.Natural (Natural)
 
 import qualified Control.Category
 
@@ -18,6 +19,7 @@ data Ty
     | TyPair Ty Ty
     | TyFun Ty Ty
     | TyCoproduct Ty Ty
+    | TyNat
   deriving (Show)
 
 data Elem :: [Ty] -> Ty -> Type where
@@ -32,6 +34,8 @@ data Term :: [Ty] -> Ty -> Type where
     Lam :: Term (a ': ctx) b -> Term ctx ('TyFun a b)
     App :: Term ctx ('TyFun a b) -> Term ctx a -> Term ctx b
 
+    Unit :: Term ctx 'TyUnit
+
     Fst :: Term ctx ('TyPair a b) -> Term ctx a
     Snd :: Term ctx ('TyPair a b) -> Term ctx b
     Pair :: Term ctx a -> Term ctx b -> Term ctx ('TyPair a b)
@@ -39,6 +43,8 @@ data Term :: [Ty] -> Ty -> Type where
     InL :: Term ctx a -> Term ctx ('TyCoproduct a b)
     InR :: Term ctx b -> Term ctx ('TyCoproduct a b)
     Case :: Term (a ': ctx) c -> Term (b ':  ctx) c -> Term ctx ('TyCoproduct a b) -> Term ctx c
+
+    Nat :: Natural -> Term ctx 'TyNat
 
 deriving instance Show (Term xs x)
 
@@ -79,6 +85,8 @@ weakenTerm' pfx sfx a (Case u v w) = Case
     (weakenTerm' (SCons pfx) sfx a u)
     (weakenTerm' (SCons pfx) sfx a v)
     (weakenTerm' pfx         sfx a w)
+weakenTerm' _   _   _ Unit         = Unit
+weakenTerm' _   _   _ (Nat n)      = Nat n
 
 weakenElem
     :: SList pfx
@@ -149,6 +157,8 @@ subst pfx sfx (Case u v w) t = tcase
     (subst (SCons pfx) sfx u t)
     (subst (SCons pfx) sfx v t)
     (subst pfx         sfx w t)
+subst _   _   (Nat n)      _ = Nat n
+subst _   _   Unit         _ = Unit
 
 substElem
     :: SList pfx -> Proxy sfx
@@ -182,6 +192,11 @@ instance Category (Mapping ctx) where
 -------------------------------------------------------------------------------
 -- Product: Mapping
 -------------------------------------------------------------------------------
+
+instance CategoryWith1 (Mapping ctx) where
+    type Terminal (Mapping ctx) = 'TyUnit
+
+    terminal = M $ Lam $ Unit
 
 instance CartesianCategory (Mapping ctx) where
     type Product (Mapping ctx) = 'TyPair
@@ -262,3 +277,12 @@ ex04 = eval ## fanout (transpose identity) identity
 
 ex04mapping :: Mapping ctx a ('TyPair a a)
 ex04mapping = ex04
+
+-------------------------------------------------------------------------------
+-- Generalized Element: Mapping
+-------------------------------------------------------------------------------
+
+instance GeneralizedElement (Mapping ctx) where
+    type Object (Mapping ctx) ty = Term ctx ty
+
+    konst t = M $ Lam $ weakenTerm t

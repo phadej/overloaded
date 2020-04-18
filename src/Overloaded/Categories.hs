@@ -111,10 +111,12 @@ module Overloaded.Categories (
     C.Category,
     identity,
     (##),
+    CategoryWith1 (..),
     CartesianCategory (..),
     CocartesianCategory (..),
     BicartesianCategory (..),
     CCC (..),
+    GeneralizedElement (..),
     ) where
 
 import qualified Control.Category as C
@@ -149,17 +151,27 @@ infixr 9 ##
 -- Product
 -------------------------------------------------------------------------------
 
+-- | Category with terminal object.
+class C.Category cat => CategoryWith1 (cat :: k -> k -> Type) where
+    type Terminal cat :: k
+    
+    terminal :: cat a (Terminal cat)
+
 -- | Cartesian category is a monoidal category
 -- where monoidal product is the categorical product.
 --
--- TODO: we don't have terminal object in this definition.
-class C.Category cat => CartesianCategory (cat :: k -> k -> Type) where
+class CategoryWith1 cat => CartesianCategory (cat :: k -> k -> Type) where
     type Product cat :: k -> k -> k
 
     proj1 :: cat (Product cat a b) a
     proj2 :: cat (Product cat a b) b
 
     fanout :: cat a b -> cat a c -> cat a (Product cat b c)
+
+instance CategoryWith1 (->) where
+    type Terminal (->) = ()
+
+    terminal _ = ()
 
 instance CartesianCategory (->) where
     type Product (->) = (,)
@@ -221,3 +233,17 @@ instance CCC (->) where
 
     eval      = uncurry ($)
     transpose = curry
+
+-------------------------------------------------------------------------------
+-- Generalized Element
+-------------------------------------------------------------------------------
+
+class C.Category cat => GeneralizedElement (cat :: k -> k -> Type) where
+    type Object cat (a :: k) :: Type
+
+    konst :: Object cat a -> cat x a
+
+instance GeneralizedElement (->) where
+    type Object (->) a = a
+
+    konst = const

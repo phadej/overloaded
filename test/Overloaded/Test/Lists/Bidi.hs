@@ -7,14 +7,12 @@
   #-}
 module Overloaded.Test.Lists.Bidi where
 
-import Data.List.NonEmpty     (NonEmpty (..))
 import Data.SOP.BasicFunctors (I (..))
 import Data.SOP.NP            (NP (..), POP (..))
 import Data.Vec.Lazy          (Vec (..))
 import Test.Tasty             (TestTree, testGroup)
 import Test.Tasty.HUnit       (testCase, (@?=))
 
-import qualified Data.Map      as Map
 import qualified Data.Set      as Set
 import qualified Data.Type.Nat as N
 

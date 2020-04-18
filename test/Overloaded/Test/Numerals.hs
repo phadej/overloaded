@@ -9,7 +9,6 @@ import Test.Tasty.HUnit (testCase, (@?=))
 
 import qualified Data.Bin      as B
 import qualified Data.BinP     as BP
-import qualified Data.Type.Bin as B
 import qualified Data.Type.Nat as N
 
 tests :: TestTree

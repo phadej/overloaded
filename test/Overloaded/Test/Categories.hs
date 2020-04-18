@@ -4,7 +4,6 @@
 module Overloaded.Test.Categories where
 
 import Data.Bifunctor.Assoc  (assoc)
-import Data.Bifunctor.Swap (swap)
 import Test.QuickCheck       ((===))
 import Test.QuickCheck.Poly  (A, B, C)
 import Test.Tasty            (TestTree, testGroup)
@@ -78,6 +77,11 @@ tests = testGroup "Categories"
             lhs = "Lam (Lam (App (App (Var (There Here)) (Fst (Var Here))) (Snd (Var Here))))"
         show rhs @?= lhs
 
+    , testCase "konst Mapping" $ do
+        let M rhs = catKonst (Nat 3) (Nat 7)
+            lhs = "Lam (Pair (Nat 3) (Nat 7))"
+        show rhs @?= lhs
+
     , testCase "AD" $ do
         evaluateAD quad (0, 0) [(1,0), (0,1), (1, 1)] @?= (0 :: Int, [0,0,0])
         evaluateAD quad (1, 2) [(1,0), (0,1), (1, 1)] @?= (5 :: Int, [2,4,6])
@@ -113,6 +117,16 @@ catUncurry
 catUncurry = transpose $ proc (f, (a, b)) -> do
     bc <- f -<< a
     bc -<< b
+
+catKonst
+    :: (CartesianCategory cat, GeneralizedElement cat)
+    => Object cat a
+    -> Object cat b
+    -> cat c (Product cat a b)
+catKonst a b = proc _ -> do
+    a' <- konst a -< ()
+    b' <- konst b -< ()
+    identity -< (a', b')
     
 quad :: Num a => AD (a, a) a
 quad = proc (x, y) -> do
