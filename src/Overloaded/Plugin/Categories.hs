@@ -122,7 +122,11 @@ parseCmd names ctx (L _ (HsCmdDo _ (L l stmts))) =
 parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsFirstOrderApp _)) = do
     morp' <- parseTerm names morp
     expr' <- parseExpr names ctx expr
-    return $ Last morp' expr'
+    return $ Last (Right morp') expr'
+parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsHigherOrderApp _)) = do
+    morp' <- parseExpr names ctx morp
+    expr' <- parseExpr names ctx expr
+    return $ Last (Left morp') expr'
 parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
     case mg_alts matchGroup of
 #if MIN_VERSION_ghc(8,8,0) && !MIN_VERSION_ghc(8,10,1)
@@ -246,11 +250,11 @@ instance Bifunctor Proc where
     bimap f g (Proc p c) = Proc p (bimap f (fmap g) c)
 
 data Continuation term a where
-    Last :: Morphism term -> Expression a -> Continuation term a
+    Last :: Either (Expression a) (Morphism term) -> Expression a -> Continuation term a
       -- ^ term -< y
     Edge
         :: Pattern sh String
-        -> Morphism term
+        -> Either (Expression a) (Morphism term)
         -> Expression a
         -> Continuation term (Var (Index sh) a)
         -> Continuation term a
@@ -267,8 +271,8 @@ data Continuation term a where
 deriving instance (Show a, Show term) => Show (Continuation term a)
 
 instance Bifunctor Continuation where
-    bimap f g (Last term e)         = Last (fmap f term) (fmap g e)
-    bimap f g (Edge p term e c)     = Edge p (fmap f term) (fmap g e) (bimap f (fmap g) c)
+    bimap f g (Last term e)         = Last (bimap (fmap g) (fmap f) term) (fmap g e)
+    bimap f g (Edge p term e c)     = Edge p (bimap (fmap g) (fmap f) term) (fmap g e) (bimap f (fmap g) c)
     bimap f g (Split e pa pb ca cb) = Split (fmap g e) pa pb
         (bimap f (fmap g) ca)
         (bimap f (fmap g) cb)
@@ -367,6 +371,7 @@ data Morphism term
     | MInR
     | MCase (Morphism term) (Morphism term)
     | MDistr
+    | MEval
     | MTerm term
   deriving (Show, Functor)
 
@@ -391,12 +396,24 @@ desugar :: (a -> Morphism term) -> Proc term a -> Morphism term
 desugar ctx (Proc p k) = desugarC (unvar (desugarP p) ctx) k
 
 desugarC :: (a -> Morphism term) -> Continuation term a -> Morphism term
-desugarC ctx (Last term e) =
-    term <> desugarE ctx e
-desugarC ctx (Edge p term e k) = mconcat
+desugarC ctx (Last (Right term) e) = mconcat
+    [ term
+    , desugarE ctx e
+    ]
+desugarC ctx (Last (Left f) e) = mconcat
+    [ MEval
+    , MProduct (desugarE ctx f) (desugarE ctx e)
+    ]
+desugarC ctx (Edge p (Right term) e k) = mconcat
     [ desugarC (unvar (\x -> desugarP p x <> MProj1) (\y -> ctx y <> MProj2)) k
     , MProduct
         (term <> desugarE ctx e)
+        MId
+    ]
+desugarC ctx (Edge p (Left f) e k) = mconcat
+    [ desugarC (unvar (\x -> desugarP p x <> MEval <> MProj1) (\y -> ctx y <> MProj2)) k
+    , MProduct
+        (MProduct (desugarE ctx f) (desugarE ctx e))
         MId
     ]
 desugarC ctx (Split e pa pb ka kb) = mconcat
@@ -437,4 +454,5 @@ generate Names {..} = go where
     go MInL           = hsVar noSrcSpan catInlName
     go MInR           = hsVar noSrcSpan catInrName
     go MDistr         = hsVar noSrcSpan catDistrName
+    go MEval          = hsVar noSrcSpan catEvalName
     go (MCase f g)    = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFaninName) [go f, go g]
