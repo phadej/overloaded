@@ -9,12 +9,16 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wall #-}
+-- | This module is wrongly named.
 module VectorSpace (
     LinMap (..),
     HasDim(Dim, dimDict),
     toRawMatrix,
     L (..),
     linear,
+    VectorSpace (..),
+    toVector,
+    fromVector,
 ) where
 
 import Data.Constraint       ((:-), Dict (..), withDict)
@@ -159,6 +163,7 @@ instance (HasDim a, HasDim b) => HasDim (a, b) where
 
     splitPair = (Dict, Dict)
 
+
 withDimDict :: HasDim a => Proxy a -> (KnownNat (Dim a) => r) -> r
 withDimDict p = withDict (dimDict p)
 
@@ -207,3 +212,32 @@ toRawMatrix (LV f g) = go splitPair f g where
 --         withDimDict (Proxy :: Proxy x) $
 --         withDimDict (Proxy :: Proxy y) $
 --         toStaticMatrix f' LS.=== toStaticMatrix g'
+
+-------------------------------------------------------------------------------
+-- Vector space
+-------------------------------------------------------------------------------
+
+class HasDim a => VectorSpace a where
+    toVector' :: a -> [Double] -> [Double]
+
+    fromVector' :: [Double] -> (a -> [Double] -> r) -> r
+
+toVector :: VectorSpace a => a -> [Double]
+toVector x = toVector' x []
+
+fromVector :: VectorSpace a => [Double] -> a
+fromVector ds = fromVector' ds const
+
+instance VectorSpace Double where
+    toVector' d = (d :)
+
+    fromVector' []     k = k 0 []
+    fromVector' (d:ds) k = k d ds
+
+instance (VectorSpace a, VectorSpace b) => VectorSpace (a, b) where
+    toVector' (a, b) = toVector' a . toVector' b
+
+    fromVector' xs k =
+        fromVector' xs $ \a ys ->
+        fromVector' ys $ \b zs ->
+        k (a, b) zs
