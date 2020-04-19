@@ -187,7 +187,7 @@ parseTerm
     :: Names
     -> LHsExpr GhcRn
     -> Rewrite (Morphism (LHsExpr GhcRn))
-parseTerm Names {..} (L _ (HsVar _ (L _ name)))
+parseTerm Names {catNames = CatNames {..}} (L _ (HsVar _ (L _ name)))
     | name == catIdentityName = return MId
 parseTerm _ term = return (MTerm term)
 
@@ -451,7 +451,7 @@ desugarE ctx = go where
 -------------------------------------------------------------------------------
 
 generate :: Names -> Morphism (LHsExpr GhcRn) -> LHsExpr GhcRn
-generate Names {..} = go where
+generate Names {catNames = CatNames {..}} = go where
     go MId            = hsVar noSrcSpan catIdentityName
     go (MCompose f g) = hsPar noSrcSpan $ hsOpApp noSrcSpan (go f) (hsVar noSrcSpan catComposeName) (go g)
     go (MTerm term)   = term

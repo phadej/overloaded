@@ -3,6 +3,9 @@ module Overloaded.Plugin.Names (
     -- * Names
     Names (..),
     getNames,
+    -- * CatNames
+    CatNames (..),
+    getCatNames,
     -- * VarName
     VarName (..),
     lookupVarName,
@@ -40,7 +43,13 @@ data Names = Names
     , doPureName         :: GHC.Name
     , doThenName         :: GHC.Name
     , doBindName         :: GHC.Name
-    , catIdentityName    :: GHC.Name
+    , conLeftName        :: GHC.Name
+    , conRightName       :: GHC.Name
+    , catNames           :: CatNames
+    }
+
+data CatNames = CatNames
+    { catIdentityName    :: GHC.Name
     , catComposeName     :: GHC.Name
     , catTerminalName    :: GHC.Name
     , catProj1Name       :: GHC.Name
@@ -51,8 +60,6 @@ data Names = Names
     , catFaninName       :: GHC.Name
     , catDistrName       :: GHC.Name
     , catEvalName        :: GHC.Name
-    , conLeftName        :: GHC.Name
-    , conRightName       :: GHC.Name
     }
 
 getNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.TcM Names
@@ -83,22 +90,28 @@ getNames dflags env = do
     doBindName <- lookupName' dflags env overloadedDoMN "Bind"
     doThenName <- lookupName' dflags env overloadedDoMN "Then"
 
-    catIdentityName <- lookupName dflags env overloadedCategoriesMN "identity"
-    catComposeName  <- lookupName dflags env overloadedCategoriesMN "##"
-    catProj1Name    <- lookupName dflags env overloadedCategoriesMN "proj1"
-    catProj2Name    <- lookupName dflags env overloadedCategoriesMN "proj2"
-    catFanoutName   <- lookupName dflags env overloadedCategoriesMN "fanout"
-    catInlName      <- lookupName dflags env overloadedCategoriesMN "inl"
-    catInrName      <- lookupName dflags env overloadedCategoriesMN "inr"
-    catFaninName    <- lookupName dflags env overloadedCategoriesMN "fanin"
-    catDistrName    <- lookupName dflags env overloadedCategoriesMN "distr"
-    catEvalName     <- lookupName dflags env overloadedCategoriesMN "eval"
-    catTerminalName <- lookupName dflags env overloadedCategoriesMN "terminal"
-
     conLeftName  <- lookupNameDataCon dflags env dataEitherMN "Left"
     conRightName <- lookupNameDataCon dflags env dataEitherMN "Right"
 
+    catNames <- getCatNames dflags env overloadedCategoriesMN
+
     return Names {..}
+
+getCatNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> GHC.TcM CatNames
+getCatNames dflags env module_ = do
+    catIdentityName <- lookupName dflags env module_ "identity"
+    catComposeName  <- lookupName dflags env module_ "##"
+    catProj1Name    <- lookupName dflags env module_ "proj1"
+    catProj2Name    <- lookupName dflags env module_ "proj2"
+    catFanoutName   <- lookupName dflags env module_ "fanout"
+    catInlName      <- lookupName dflags env module_ "inl"
+    catInrName      <- lookupName dflags env module_ "inr"
+    catFaninName    <- lookupName dflags env module_ "fanin"
+    catDistrName    <- lookupName dflags env module_ "distr"
+    catEvalName     <- lookupName dflags env module_ "eval"
+    catTerminalName <- lookupName dflags env module_ "terminal"
+
+    return CatNames {..}
 
 lookupName :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
 lookupName dflags env mn vn = do

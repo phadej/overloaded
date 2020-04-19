@@ -229,8 +229,11 @@ pluginImpl args' env gr = do
         True  -> return $ transformDo names
 
     trCategories <- case optCategories of
-        False -> return transformNoOp
-        True  -> return $ transformCategories names
+        Off          -> return transformNoOp
+        On Nothing   -> return $ transformCategories names
+        On (Just mn) -> do
+            catNames' <- getCatNames dflags topEnv (GHC.mkModuleName mn)
+            return $ transformCategories $ names { catNames = catNames' }
 
     trUnit <- case optUnit of
         Off        -> return transformNoOp
@@ -336,13 +339,15 @@ parseArgs dflags = foldM go0 defaultOptions where
         return $ opts { optIdiomBrackets = True }
     go opts "Do" _ =
         return $ opts { optDo = True }
-    go opts "Categories" _ =
-        return $ opts { optCategories = True }
+    go opts "Categories" vns = do
+        mvn <- oneName "Categories" vns
+        return $ opts { optCategories = On $ fmap (\(VN x _) -> x) mvn }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
         return opts
 
+    oneName :: [Char] -> [a] -> m (Maybe a)
     oneName arg vns = case vns of
         []     -> return Nothing
         [vn]   -> return (Just vn)
@@ -386,7 +391,7 @@ data Options = Options
     , optRecordFields  :: Bool
     , optIdiomBrackets :: Bool
     , optDo            :: Bool
-    , optCategories    :: Bool
+    , optCategories    :: OnOff String -- module name
     }
   deriving (Eq, Show)
 
@@ -404,7 +409,7 @@ defaultOptions = Options
     , optRecordFields  = False
     , optIdiomBrackets = False
     , optDo            = False
-    , optCategories    = False
+    , optCategories    = Off
     }
 
 data StrSym
