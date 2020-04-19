@@ -19,6 +19,11 @@ instance Category AD where
 linearD :: (a -> b) -> AD a b
 linearD f = AD $ \x -> (f x, f)
 
+instance CategoryWith1 AD where
+    type Terminal AD = ()
+
+    terminal = AD $ \_ -> ((), \_ -> ())
+
 instance CartesianCategory AD where
     type Product AD = (,) 
 
@@ -29,6 +34,8 @@ instance CartesianCategory AD where
         let (b, f') = f a
             (c, g') = g a
         in ((b, c), fanout f' g')
+
+-- With this AD we cannot have GeneralizedElement
 
 plus :: Num a => AD (a, a) a
 plus = linearD (uncurry (+))

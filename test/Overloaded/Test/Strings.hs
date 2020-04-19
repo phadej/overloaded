@@ -4,7 +4,7 @@ module Overloaded.Test.Strings where
 import Test.Tasty       (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 
-import Data.Text (Text, pack)
+import Data.Text (pack)
 
 tests :: TestTree
 tests = testGroup "Strings"

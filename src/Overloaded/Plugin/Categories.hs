@@ -87,10 +87,13 @@ parseExpr
     -> Rewrite (Expression (Var b a))
 parseExpr names ctx (L _ (HsPar _ expr)) =
     parseExpr names ctx expr
-parseExpr _     ctx (L _ (HsVar _ (L l name))) =
-    case Map.lookup name ctx of
+parseExpr _     ctx (L _ (HsVar _ (L l name)))
+    | name == GHC.getName (GHC.tupleDataCon GHC.Boxed 0)
+    = return ExpressionUnit
+    | otherwise
+    = case Map.lookup name ctx of
         Nothing -> Error $ \dflags ->
-            putError dflags l $ GHC.text "Unbound variable" GHC.<+> GHC.ppr name
+            putError dflags l $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
         Just b -> return $ ExpressionVar (B b)
 parseExpr names ctx (L _ (ExplicitTuple _ [L _ (Present _ x), L _ (Present _ y)] Plugins.Boxed)) = do
     x' <- parseExpr names ctx x
@@ -351,6 +354,7 @@ combineMaps m pat = Map.union (Map.map F m) (Map.map B (patternMap pat))
 
 data Expression a
     = ExpressionVar a
+    | ExpressionUnit
     | ExpressionTuple (Expression a) (Expression a)
     | ExpressionLeft (Expression a)
     | ExpressionRight (Expression a)
@@ -365,6 +369,7 @@ data Morphism term
     = MId
     | MCompose (Morphism term) (Morphism term)
     | MProduct (Morphism term) (Morphism term)
+    | MTerminal
     | MProj1
     | MProj2
     | MInL
@@ -376,6 +381,7 @@ data Morphism term
   deriving (Show, Functor)
 
 instance Semigroup (Morphism term) where
+    MTerminal <> _            = MTerminal
     MId       <> m            = m
     m         <> MId          = m
     MProj1    <> MProduct f _ = f
@@ -434,6 +440,7 @@ desugarP (PatternTuple _ r) (InR i) = desugarP r i <> MProj2
 
 desugarE :: (a -> Morphism term) -> Expression a -> Morphism term
 desugarE ctx = go where
+    go ExpressionUnit        = MTerminal
     go (ExpressionVar a)     = ctx a
     go (ExpressionTuple x y) = MProduct (go x) (go y)
     go (ExpressionLeft x)    = MInL <> go x
@@ -448,6 +455,7 @@ generate Names {..} = go where
     go MId            = hsVar noSrcSpan catIdentityName
     go (MCompose f g) = hsPar noSrcSpan $ hsOpApp noSrcSpan (go f) (hsVar noSrcSpan catComposeName) (go g)
     go (MTerm term)   = term
+    go MTerminal      = hsVar noSrcSpan catTerminalName
     go MProj1         = hsVar noSrcSpan catProj1Name
     go MProj2         = hsVar noSrcSpan catProj2Name
     go (MProduct f g) = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFanoutName) [go f, go g]

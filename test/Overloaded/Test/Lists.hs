@@ -6,6 +6,7 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 {-# OPTIONS -fplugin=Overloaded
             -fplugin-opt=Overloaded:Lists
+            -Wno-type-defaults
   #-}
 module Overloaded.Test.Lists where
 

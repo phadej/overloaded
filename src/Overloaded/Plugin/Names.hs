@@ -42,6 +42,7 @@ data Names = Names
     , doBindName         :: GHC.Name
     , catIdentityName    :: GHC.Name
     , catComposeName     :: GHC.Name
+    , catTerminalName    :: GHC.Name
     , catProj1Name       :: GHC.Name
     , catProj2Name       :: GHC.Name
     , catFanoutName      :: GHC.Name
@@ -92,6 +93,7 @@ getNames dflags env = do
     catFaninName    <- lookupName dflags env overloadedCategoriesMN "fanin"
     catDistrName    <- lookupName dflags env overloadedCategoriesMN "distr"
     catEvalName     <- lookupName dflags env overloadedCategoriesMN "eval"
+    catTerminalName <- lookupName dflags env overloadedCategoriesMN "terminal"
 
     conLeftName  <- lookupNameDataCon dflags env dataEitherMN "Left"
     conRightName <- lookupNameDataCon dflags env dataEitherMN "Right"
