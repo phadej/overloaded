@@ -1,6 +1,6 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE PolyKinds #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Categories #-}
+{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Categories=Overloaded.Categories.identity #-}
 module Overloaded.Test.Categories where
 
 import Data.Bifunctor.Assoc  (assoc)
