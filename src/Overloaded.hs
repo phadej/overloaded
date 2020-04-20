@@ -41,7 +41,7 @@ module Overloaded (
     -- * Overloaded:Categories
     Category,
     identity,
-    (##),
+    (%%),
     CartesianCategory (..),
     CocartesianCategory (..),
     BicartesianCategory (..),

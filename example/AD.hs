@@ -86,10 +86,10 @@ evaluateAD (AD f) x = let (y, f') = f x in (y, evalL f')
 -------------------------------------------------------------------------------
 
 ex1 :: AD Double Double
-ex1 = plus ## fanout identity identity
+ex1 = plus %% fanout identity identity
 
 ex2 :: AD Double Double
-ex2 = mult ## fanout identity identity
+ex2 = mult %% fanout identity identity
 
 -------------------------------------------------------------------------------
 -- Quadratic function

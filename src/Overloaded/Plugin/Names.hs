@@ -100,7 +100,7 @@ getNames dflags env = do
 getCatNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> GHC.TcM CatNames
 getCatNames dflags env module_ = do
     catIdentityName <- lookupName dflags env module_ "identity"
-    catComposeName  <- lookupName dflags env module_ "##"
+    catComposeName  <- lookupName dflags env module_ "%%"
     catProj1Name    <- lookupName dflags env module_ "proj1"
     catProj2Name    <- lookupName dflags env module_ "proj2"
     catFanoutName   <- lookupName dflags env module_ "fanout"

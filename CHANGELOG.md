@@ -1,11 +1,10 @@
-# 0.2.2
-
-- Add `Overloaded:Do`
-- GHC-8.10 support
-
 # 0.2.1
 
-- Add `Overloaded:Unit`
+- Add `Overloaded:Categories`, which makes `Arrows` notation desugar to
+  categories, a bit like in Conal Elliot's *Compiling to Categories*.
+- Add `Overloaded:Do`, which is like *Local Do*
+- Add `Overloaded:Unit`, which overloads value `()` to be whatever you want
+- GHC-8.10 support
 
 # 0.2
 

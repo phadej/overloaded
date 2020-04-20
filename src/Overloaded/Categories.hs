@@ -34,7 +34,7 @@
 -- are desugared to (a mess which is)
 --
 -- @
--- 'fanout' ('proj1' '##' 'proj1') ('fanout' ('proj2' '##' 'proj1') 'proj2')
+-- 'fanout' ('proj1' '%%' 'proj1') ('fanout' ('proj2' '%%' 'proj1') 'proj2')
 -- @
 --
 -- If you are familiar with arrows-operators, this is similar to
@@ -110,7 +110,7 @@
 module Overloaded.Categories (
     C.Category,
     identity,
-    (##),
+    (%%),
     CategoryWith1 (..),
     CartesianCategory (..),
     CocartesianCategory (..),
@@ -136,10 +136,10 @@ identity = C.id
 {-# INLINE identity #-}
 
 -- | A non-clashing name for @('C..')@.
-(##) :: C.Category cat => cat b c -> cat a b -> cat a c
-(##) = (C..)
-{-# INLINE (##) #-}
-infixr 9 ##
+(%%) :: C.Category cat => cat b c -> cat a b -> cat a c
+(%%) = (C..)
+{-# INLINE (%%) #-}
+infixr 9 %%
 
 -------------------------------------------------------------------------------
 -- Monoidal
@@ -166,6 +166,7 @@ class CategoryWith1 cat => CartesianCategory (cat :: k -> k -> Type) where
     proj1 :: cat (Product cat a b) a
     proj2 :: cat (Product cat a b) b
 
+    -- | @'fanout' f g@ is written as \(\langle f, g \rangle\) in category theory literature.
     fanout :: cat a b -> cat a c -> cat a (Product cat b c)
 
 instance CategoryWith1 (->) where
@@ -193,6 +194,7 @@ class C.Category cat => CocartesianCategory (cat :: k -> k -> Type) where
     inl :: cat a (Coproduct cat a b)
     inr :: cat b (Coproduct cat a b)
 
+    -- | @'fanin' f g@ is written as \([f, g]\) in category theory literature.
     fanin :: cat a c -> cat b c -> cat (Coproduct cat a b) c
 
 instance CocartesianCategory (->) where
@@ -221,7 +223,7 @@ instance BicartesianCategory (->) where
 -- | Closed cartesian category.
 --
 class CartesianCategory cat => CCC (cat :: k -> k -> Type) where
-    -- | @'Exponential cat a b'@ represents \(B^A\). This is due how (->) works.
+    -- | @'Exponential' cat a b@ represents \(B^A\). This is due how (->) works.
     type Exponential cat :: k -> k -> k
 
     eval :: cat (Product cat (Exponential cat a b) a) b

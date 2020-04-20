@@ -96,7 +96,7 @@ catSwapCo
     :: BicartesianCategory cat
     => cat (Coproduct cat a b) (Coproduct cat b a)
 -- catSwapCo =
---     fanin (inr ## proj1) (inl ## proj1) ## (distr ## fanout identity identity)
+--     fanin (inr %% proj1) (inl %% proj1) %% (distr %% fanout identity identity)
 catSwapCo = proc xy -> case xy of
     Left x  -> identity -< Right x
     Right y -> identity -< Left y

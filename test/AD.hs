@@ -44,10 +44,10 @@ mult :: Num a => AD (a, a) a
 mult = AD $ \(x,y) -> (x * y, \(dx, dy) -> dx * y + dy * x)
 
 ex1 :: AD Double Double
-ex1 = plus ## fanout identity identity 
+ex1 = plus %% fanout identity identity 
 
 ex2 :: AD Double Double
-ex2 = mult ## fanout identity identity
+ex2 = mult %% fanout identity identity
 
 evaluateAD :: Functor f => AD a b -> a -> f a -> (b, f b)
 evaluateAD (AD f) x xs = let (y, f') = f x in (y, fmap f' xs)

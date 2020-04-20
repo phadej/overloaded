@@ -212,7 +212,7 @@ instance CartesianCategory (Mapping ctx) where
 -- >>> ex01mapping
 -- M (Lam (Fst (Fst (Var Here))))
 ex01 :: CartesianCategory cat => cat (Product cat (Product cat a b) c) a
-ex01 = proj1 ## proj1
+ex01 = proj1 %% proj1
 
 ex01mapping :: Mapping ctx ('TyPair ('TyPair a b) c) a
 ex01mapping = ex01
@@ -222,7 +222,7 @@ ex01mapping = ex01
 -- >>> ex0mapping
 -- M (Lam (Var Here))
 ex02 :: CartesianCategory cat => cat a a
-ex02 = proj1 ## fanout identity identity
+ex02 = proj1 %% fanout identity identity
 
 ex02mapping :: Mapping ctx a a
 ex02mapping = ex02
@@ -252,7 +252,7 @@ instance BicartesianCategory (Mapping ctx) where
 -- >>> ex03mapping
 -- M (Lam (Var Here))
 ex03 :: CocartesianCategory cat => cat a a
-ex03 = fanin identity identity ## inl
+ex03 = fanin identity identity %% inl
 
 ex03mapping :: Mapping ctx a a
 ex03mapping = ex03
@@ -273,7 +273,7 @@ instance CCC (Mapping ctx) where
 -- >>> ex04mapping
 -- M (Lam (Pair (Var Here) (Var Here)))
 ex04 :: CCC cat => cat a (Product cat a a)
-ex04 = eval ## fanout (transpose identity) identity
+ex04 = eval %% fanout (transpose identity) identity
 
 ex04mapping :: Mapping ctx a ('TyPair a a)
 ex04mapping = ex04
