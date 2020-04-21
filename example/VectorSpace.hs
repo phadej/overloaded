@@ -14,6 +14,7 @@ module VectorSpace (
     LinMap (..),
     HasDim(Dim, dimDict),
     toRawMatrix,
+    evalL,
     L (..),
     linear,
     VectorSpace (..),
@@ -181,6 +182,9 @@ toRawMatrix (LH f g) = go splitPair f g where
 toRawMatrix (LV f g) = go splitPair f g where
     go :: (Dict (HasDim x), Dict (HasDim y)) -> LinMap x b -> LinMap y b -> L.Matrix Double
     go (Dict, Dict) f' g' = toRawMatrix f' L.=== toRawMatrix g'
+
+evalL :: (HasDim a, HasDim b) => L a b -> L.Matrix Double
+evalL (L f) = toRawMatrix (f LI)
 
 -- toStaticMatrix :: forall a b. (HasDim a, HasDim b) => LinMap a b -> LS.L (Dim a) (Dim b)
 -- toStaticMatrix LZ =

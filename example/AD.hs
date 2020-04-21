@@ -7,16 +7,18 @@
 {-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Categories #-}
 module Main where
 
-import Numeric (showFFloat)
+import Control.Monad      (when)
+import Data.Word          (Word64)
+import Numeric            (showFFloat)
+import System.Environment (getArgs)
+import Data.List (intercalate)
 
 import qualified Control.Category
-import qualified Numeric.LinearAlgebra as LA
+import qualified Numeric.LinearAlgebra  as LA
+import qualified System.Random.SplitMix as SM
 
 import Overloaded.Categories
 import VectorSpace
-
-evalL :: (HasDim a, HasDim b) => L a b -> LA.Matrix Double
-evalL (L f) = toRawMatrix (f LI)
 
 -- | A Function which computes value and derivative at the point.
 newtype AD a b = AD (a -> (b, L a b))
@@ -136,6 +138,40 @@ gradDesc f = iterate go where
     gamma = 0.1
 
 -------------------------------------------------------------------------------
+-- Random
+-------------------------------------------------------------------------------
+
+randomDoubles :: Word64 -> [Double]
+randomDoubles seed = go (SM.mkSMGen seed) where
+    go g = let (d, g') = SM.nextDouble g in d : go g'
+
+-------------------------------------------------------------------------------
+-- Dot
+-------------------------------------------------------------------------------
+
+class VectorSpace' a where
+    sumN :: AD a Double
+    multN :: AD (a, a) a
+
+instance (VectorSpace' a, VectorSpace' b) => VectorSpace' (a, b) where
+    sumN = proc (x, y) -> do
+        x' <- sumN -< x
+        y' <- sumN -< y
+        plus -< (x', y')
+
+    multN = proc ((x1, x2), (y1, y2)) -> do
+        z1 <- multN -< (x1, y1)
+        z2 <- multN -< (x2, y2)
+        identity -< (z1, z2)
+
+instance VectorSpace' Double where
+    sumN  = identity
+    multN = mult
+
+dot :: VectorSpace' a => AD (a, a) Double
+dot = sumN %% multN
+
+-------------------------------------------------------------------------------
 -- ML stuff
 -------------------------------------------------------------------------------
 
@@ -149,39 +185,25 @@ sigmoidAD = AD $ \x ->
     let y = 1 / (1 + exp (- x))
     in (x, linear (y * (1 - y)))
 
+-- | weights for 2x1 connection. Two weights and bias.
+type Weights' = ((Double, Double), Double)
 
--- no biases
-type Weights = ((((Double, Double), (Double, Double)), ((Double, Double), (Double, Double))), Double)
+-- | Two internal neurons, and final output
+type Weights = ((Weights', Weights'), Weights')
 
 startWeights :: Weights
-startWeights = ((((0.1, 0.2), (0.3, 0.4)), ((0.5, 0.6), (0.7, 0.8))), 0.9)
+startWeights = fromVector $ randomDoubles 1337
 
---
--- @
--- x ----> u ---,
---     X        output
--- y ----> v ---^
--- @
+neuron :: AD (Weights', (Double, Double)) Double
+neuron = proc ((ws, bias), i) -> do
+    o <- dot -< (ws, i)
+    tanhAD %% plus -< (o, bias)
+
 network :: AD (Weights, (Double, Double)) Double
-network = proc (((((w11,w12),(w21,w22)),((b1, b2), (z1, z2))), bend), (x, y)) -> do
-    x1 <- mult   -< (x, w11)
-    y1 <- mult   -< (y, w12)
-    u0 <- plus   -< (x1, y1)
-    u1 <- plus   -< (u0, b1)
-    u2 <- tanhAD -< u1
-
-    x2 <- mult   -< (x, w21)
-    y2 <- mult   -< (y, w22)
-    v0 <- plus   -< (x2, y2)
-    v1 <- plus   -< (v0, b2)
-    v2 <- tanhAD -< v1
-
-    u <- mult -< (u2, z1)
-    v <- mult -< (v2, z2)
-
-    output' <- plus -< (u, v)
-    output <- plus -< (bend, output')
-    tanhAD -< output
+network = proc (((w1, w2), w3), xy) -> do
+    u <- neuron  -< (w1, xy)
+    v <- neuron  -< (w2, xy)
+    neuron -< (w3, (u, v))
 
 networkError :: AD Weights Double
 networkError = proc ws -> do
@@ -191,10 +213,7 @@ networkError = proc ws -> do
     s3 <- ex 1 0 1 -< ws
     s4 <- ex 0 1 1 -< ws
 
-    tmp1 <- plus -< (s1, s2)
-    tmp2 <- plus -< (s3, s4)
-    plus -< (tmp1, tmp2)
-
+    sumN -< ((s1,s2), (s3, s4))
   where
     ex :: Double -> Double -> Double -> AD Weights Double
     ex x y z = proc ws -> do
@@ -203,7 +222,7 @@ networkError = proc ws -> do
          e1 <- konst z -< ()
          a1 <- network -< (ws, (x1, y1))
          r1 <- minus   -< (e1, a1)
-         mult    -< (r1, r1)
+         mult -< (r1, r1)
 
 train :: Weights
 train = gradDesc networkError startWeights !! 500
@@ -226,7 +245,28 @@ main = do
     putStrLn $ "Error = " ++ show (fst $ evaluateAD networkError ws)
     let example xy =
           putStrLn $ "eval " ++ show xy ++ " = " ++ showFFloat (Just 2) (fst $ evaluateAD network (ws, xy)) ""
+
     example (0, 0)
     example (0, 1)
     example (1, 0)
     example (1, 1)
+
+    args <- getArgs
+    when ("plot" `elem` args) $ do
+        putStrLn "Outputting plot data: datafile.dat"
+
+        let n = 20 :: Int
+        let points = [ fromIntegral x / fromIntegral n | x <- [0..n] ] :: [Double]
+
+        let output :: String
+            output = unlines
+                [ intercalate "\t"
+                    [ show x
+                    , show y
+                    , show (fst (evaluateAD network (ws, (x, y))))
+                    ]
+                | x <- points
+                , y <- points
+                ]
+
+        writeFile "datafile.dat" output
