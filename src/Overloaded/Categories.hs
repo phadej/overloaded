@@ -55,7 +55,7 @@
 --
 -- @proc@ notation is nicer than writing de Bruijn indices.
 --
--- This is very similar idea to Conal Elliott's [Compiling to Categories](http://conal.net/papers/compiling-to-categories/) work. 
+-- This is very similar idea to Conal Elliott's [Compiling to Categories](http://conal.net/papers/compiling-to-categories/) work.
 -- This approach is syntactically more heavy, but works in more correct
 -- stage of compiler, before actual desugarer.
 --
@@ -75,7 +75,7 @@
 -- evaluateAD (AD f) x xs = let (y, f') = f x in (y, fmap f' xs)
 -- @
 --
--- which would allow to calculuate function value and 
+-- which would allow to calculuate function value and
 -- derivatives in given directions. Then we can define
 -- simple quadratic function:
 --
@@ -113,6 +113,7 @@ module Overloaded.Categories (
     (%%),
     CategoryWith1 (..),
     CartesianCategory (..),
+    CategoryWith0 (..),
     CocartesianCategory (..),
     BicartesianCategory (..),
     CCC (..),
@@ -120,7 +121,11 @@ module Overloaded.Categories (
     ) where
 
 import qualified Control.Category as C
-import           Data.Kind        (Type)
+
+import Data.Functor.Contravariant (Op (..))
+import Data.Kind                  (Type)
+import Data.Semigroupoid.Dual     (Dual (..))
+import Data.Void                  (Void, absurd)
 
 #ifdef __HADDOCK__
 import Control.Arrow
@@ -154,7 +159,7 @@ infixr 9 %%
 -- | Category with terminal object.
 class C.Category cat => CategoryWith1 (cat :: k -> k -> Type) where
     type Terminal cat :: k
-    
+
     terminal :: cat a (Terminal cat)
 
 -- | Cartesian category is a monoidal category
@@ -181,14 +186,32 @@ instance CartesianCategory (->) where
     proj2 = snd
     fanout f g x = (f x , g x)
 
+instance CategoryWith1 Op where
+    type Terminal Op = Void
+
+    terminal = Op absurd
+
+instance CartesianCategory Op where
+    type Product Op = Either
+
+    proj1 = Op inl
+    proj2 = Op inr
+    fanout (Op f) (Op g) = Op (fanin f g)
+
 -------------------------------------------------------------------------------
 -- Coproduct
 -------------------------------------------------------------------------------
 
+-- | Category with initial object.
+class C.Category cat => CategoryWith0 (cat :: k -> k -> Type) where
+    type Initial cat :: k
+
+    initial :: cat (Initial cat) a
+
 -- | Cocartesian category is a monoidal category
 -- where monoidal product is the categorical coproduct.
 --
-class C.Category cat => CocartesianCategory (cat :: k -> k -> Type) where
+class CategoryWith0 cat => CocartesianCategory (cat :: k -> k -> Type) where
     type Coproduct cat :: k -> k -> k
 
     inl :: cat a (Coproduct cat a b)
@@ -197,12 +220,29 @@ class C.Category cat => CocartesianCategory (cat :: k -> k -> Type) where
     -- | @'fanin' f g@ is written as \([f, g]\) in category theory literature.
     fanin :: cat a c -> cat b c -> cat (Coproduct cat a b) c
 
+instance CategoryWith0 (->) where
+    type Initial (->) = Void
+
+    initial = absurd
+
 instance CocartesianCategory (->) where
     type Coproduct (->) = Either
 
     inl = Left
     inr = Right
     fanin = either
+
+instance CategoryWith0 Op where
+    type Initial Op = ()
+
+    initial = Op (const ())
+
+instance CocartesianCategory Op where
+    type Coproduct Op = (,)
+
+    inl = Op proj1
+    inr = Op proj2
+    fanin (Op f) (Op g) = Op (fanout f g)
 
 -- | Bicartesian category is category which is
 -- both cartesian and cocartesian.
@@ -215,6 +255,34 @@ class (CartesianCategory cat, CocartesianCategory cat) => BicartesianCategory ca
 instance BicartesianCategory (->) where
     distr (Left x,  z) = Left (x, z)
     distr (Right y, z) = Right (y, z)
+
+-------------------------------------------------------------------------------
+-- Dual
+-------------------------------------------------------------------------------
+
+instance CategoryWith1 cat => CategoryWith0 (Dual cat) where
+    type Initial (Dual cat) = Terminal cat
+    initial = Dual terminal
+
+instance CategoryWith0 cat => CategoryWith1 (Dual cat) where
+    type Terminal (Dual cat) = Initial cat
+    terminal = Dual initial
+
+instance CartesianCategory cat => CocartesianCategory (Dual cat) where
+    type Coproduct (Dual cat) = Product cat
+
+    inl = Dual proj1
+    inr = Dual proj2
+
+    fanin (Dual f) (Dual g) = Dual (fanout f g)
+
+instance CocartesianCategory cat => CartesianCategory (Dual cat) where
+    type Product (Dual cat) = Coproduct cat
+
+    proj1 = Dual inl
+    proj2 = Dual inr
+
+    fanout (Dual f) (Dual g) = Dual (fanin f g)
 
 -------------------------------------------------------------------------------
 -- Exponential

@@ -2,5 +2,6 @@ with-compiler: ghc-8.6.5
 packages: .
 tests:  True
 
--- package overloaded
---   ghc-options: -Wall -Werror
+package overloaded
+  ghc-options: -Wall
+--  ghc-options: -Werror

@@ -71,6 +71,10 @@ instance CartesianCategory LinMap where
     proj2  = LV LZ LI
     fanout = LH
 
+instance CategoryWith0 LinMap where
+    type Initial LinMap = ()
+    initial = LZ
+
 instance CocartesianCategory LinMap where
     type Coproduct LinMap = (,)
     inl   = LH LI LZ
@@ -93,12 +97,15 @@ lfst LZ       = LZ
 lfst LI       = LV LI LZ
 
 lsnd :: LinMap a (b, c) -> LinMap a c
-lsnd (LH _ g)     = g
-lsnd (LA f g)   = LA (lsnd f) (lsnd g)
+lsnd (LH _ g) = g
+lsnd (LA f g) = LA (lsnd f) (lsnd g)
 lsnd (LK k f) = LK k (lsnd f)
-lsnd (LV f g)     = LV (lsnd f) (lsnd g)
-lsnd LZ           = LZ
-lsnd LI           = LV LZ LI
+lsnd (LV f g) = LV (lsnd f) (lsnd g)
+lsnd LZ       = LZ
+lsnd LI       = LV LZ LI
+
+linitial :: LinMap r () -> LinMap r a
+linitial _ = LZ
 
 linear :: Double -> L a a
 linear k = L $ LK k
@@ -127,6 +134,11 @@ instance CartesianCategory L where
     proj2 = L lsnd
 
     fanout (L f) (L g) = L $ \x -> LH (f x) (g x)
+
+instance CategoryWith0 L where
+    type Initial L = ()
+
+    initial = L linitial
 
 -- Is this correct?
 instance CocartesianCategory L where

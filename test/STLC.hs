@@ -5,6 +5,7 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS_GHC -Wall #-}
 module STLC where
 
 import Data.Kind             (Type)
@@ -16,6 +17,7 @@ import qualified Control.Category
 
 data Ty
     = TyUnit
+    | TyVoid
     | TyPair Ty Ty
     | TyFun Ty Ty
     | TyCoproduct Ty Ty
@@ -35,6 +37,7 @@ data Term :: [Ty] -> Ty -> Type where
     App :: Term ctx ('TyFun a b) -> Term ctx a -> Term ctx b
 
     Unit :: Term ctx 'TyUnit
+    Absurd :: Term ctx 'TyVoid -> Term ctx a
 
     Fst :: Term ctx ('TyPair a b) -> Term ctx a
     Snd :: Term ctx ('TyPair a b) -> Term ctx b
@@ -153,6 +156,7 @@ subst pfx sfx (InL x)      t = InL (subst pfx sfx x t)
 subst pfx sfx (InR x)      t = InR (subst pfx sfx x t)
 subst pfx sfx (App u v)    t = app (subst pfx sfx u t) (subst pfx sfx v t)
 subst pfx sfx (Pair u v)   t = Pair (subst pfx sfx u t) (subst pfx sfx v t)
+subst pfx sfx (Absurd x)   t = Absurd (subst pfx sfx x t)
 subst pfx sfx (Case u v w) t = tcase
     (subst (SCons pfx) sfx u t)
     (subst (SCons pfx) sfx v t)
@@ -230,6 +234,11 @@ ex02mapping = ex02
 -------------------------------------------------------------------------------
 -- Coproduct: Mapping
 -------------------------------------------------------------------------------
+
+instance CategoryWith0 (Mapping ctx) where
+    type Initial (Mapping ctx) = 'TyVoid
+
+    initial = M $ Lam $ Absurd var0
 
 instance CocartesianCategory (Mapping ctx) where
     type Coproduct (Mapping ctx) = 'TyCoproduct
