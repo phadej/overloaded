@@ -16,9 +16,9 @@
 -- The 'arr' combinator is used for plumbing. We should desugar to proper
 -- type-classes:
 --
--- * 'CartesianCategory', not 'Arrow'
--- * 'CocartesianCategory', not 'ArrowChoice' (implementation relies on 'BicartesianCategory')
--- * 'CCC', not 'ArrowApply' (not implemented yet)
+-- * 'CartesianCategory', not 'A.Arrow'
+-- * 'CocartesianCategory', not 'A.ArrowChoice' (implementation relies on 'BicartesianCategory')
+-- * 'CCC', not 'A.ArrowApply' (not implemented yet)
 --
 -- == Examples
 --
@@ -118,18 +118,16 @@ module Overloaded.Categories (
     BicartesianCategory (..),
     CCC (..),
     GeneralizedElement (..),
+    WrappedArrow (..),
     ) where
 
 import qualified Control.Category as C
+import qualified Control.Arrow as A
 
 import Data.Functor.Contravariant (Op (..))
 import Data.Kind                  (Type)
 import Data.Semigroupoid.Dual     (Dual (..))
 import Data.Void                  (Void, absurd)
-
-#ifdef __HADDOCK__
-import Control.Arrow
-#endif
 
 -------------------------------------------------------------------------------
 -- Category
@@ -317,3 +315,46 @@ instance GeneralizedElement (->) where
     type Object (->) a = a
 
     konst = const
+
+-------------------------------------------------------------------------------
+-- WrappedArrow
+-------------------------------------------------------------------------------
+
+newtype WrappedArrow arr a b = WrapArrow { unwrapArrow :: arr a b }
+
+instance C.Category arr => C.Category (WrappedArrow arr) where
+    id = WrapArrow identity
+    WrapArrow f . WrapArrow g = WrapArrow (f %% g)
+
+instance A.Arrow arr => CategoryWith1 (WrappedArrow arr) where
+    type Terminal (WrappedArrow arr) = ()
+    terminal = WrapArrow (A.arr terminal)
+
+instance A.Arrow arr => CartesianCategory (WrappedArrow arr) where
+    type Product (WrappedArrow arr) = (,)
+    proj1 = WrapArrow (A.arr proj1)
+    proj2 = WrapArrow (A.arr proj2)
+    fanout (WrapArrow f) (WrapArrow g) = WrapArrow (f A.&&& g)
+
+instance A.Arrow arr => CategoryWith0 (WrappedArrow arr) where
+    type Initial (WrappedArrow arr) = Void
+    initial = WrapArrow (A.arr absurd)
+
+instance A.ArrowChoice arr => CocartesianCategory (WrappedArrow arr) where
+    type Coproduct (WrappedArrow arr) = Either
+    inl = WrapArrow (A.arr inl)
+    inr = WrapArrow (A.arr inr)
+    fanin (WrapArrow f) (WrapArrow g) = WrapArrow (f A.||| g)
+
+instance A.ArrowChoice arr => BicartesianCategory (WrappedArrow arr) where
+    distr = WrapArrow (A.arr distr)
+
+instance A.ArrowApply arr => CCC (WrappedArrow arr) where
+    type Exponential (WrappedArrow arr) = arr
+
+    eval = WrapArrow A.app
+    transpose = error "ArrowApply @(WrappedArrow arr) is not implemented"
+
+instance A.Arrow arr => GeneralizedElement (WrappedArrow arr) where
+    type Object (WrappedArrow arr) a = a
+    konst = WrapArrow . A.arr . const

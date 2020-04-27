@@ -84,6 +84,7 @@ weakenTerm' pfx sfx a (Snd t)      = Snd (weakenTerm' pfx sfx a t)
 weakenTerm' pfx sfx a (Pair u v)   = Pair (weakenTerm' pfx sfx a u) (weakenTerm' pfx sfx a v)
 weakenTerm' pfx sfx a (InL t)      = InL (weakenTerm' pfx sfx a t)
 weakenTerm' pfx sfx a (InR t)      = InR (weakenTerm' pfx sfx a t)
+weakenTerm' pfx sfx a (Absurd t)   = Absurd (weakenTerm' pfx sfx a t)
 weakenTerm' pfx sfx a (Case u v w) = Case
     (weakenTerm' (SCons pfx) sfx a u)
     (weakenTerm' (SCons pfx) sfx a v)
