@@ -1,6 +1,7 @@
-{-# LANGUAGE CPP          #-}
-{-# LANGUAGE PolyKinds    #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE PolyKinds         #-}
+{-# LANGUAGE TypeFamilies      #-}
 -- | Overloaded Categories, desugar @Arrow@ into classes in this module.
 --
 -- == Enabled with
@@ -111,6 +112,10 @@ module Overloaded.Categories (
     C.Category,
     identity,
     (%%),
+    SemigroupalCategory (..),
+    defaultAssoc, defaultUnassoc,
+    MonoidalCategory (..),
+    defaultLunit, defaultRunit, defaultUnrunit, defaultUnlunit,
     CategoryWith1 (..),
     CartesianCategory (..),
     CategoryWith0 (..),
@@ -121,11 +126,14 @@ module Overloaded.Categories (
     WrappedArrow (..),
     ) where
 
+import qualified Control.Arrow    as A
 import qualified Control.Category as C
-import qualified Control.Arrow as A
 
+import Control.Applicative        (liftA2)
+import Control.Arrow              (Kleisli (..))
 import Data.Functor.Contravariant (Op (..))
 import Data.Kind                  (Type)
+import Data.Profunctor            (Star (..))
 import Data.Semigroupoid.Dual     (Dual (..))
 import Data.Void                  (Void, absurd)
 
@@ -149,13 +157,48 @@ infixr 9 %%
 -------------------------------------------------------------------------------
 
 -- TODO
+class C.Category cat => SemigroupalCategory (cat :: k -> k -> Type) where
+    type Tensor cat :: k -> k -> k
+
+    assoc :: cat (Tensor cat (Tensor cat a b) c)
+                 (Tensor cat a (Tensor cat b c))
+
+    unassoc :: cat (Tensor cat a (Tensor cat b c))
+                   (Tensor cat (Tensor cat a b) c)
+
+defaultAssoc :: (CartesianCategory cat, Tensor cat ~ Product cat) => cat (Tensor cat (Tensor cat a b) c) (Tensor cat a (Tensor cat b c))
+defaultAssoc = fanout (proj1 %% proj1) (fanout (proj2 %% proj1) proj2)
+
+defaultUnassoc :: (CartesianCategory cat, Tensor cat ~ Product cat) => cat (Tensor cat a (Tensor cat b c)) (Tensor cat (Tensor cat a b) c)
+defaultUnassoc = fanout (fanout proj1 (proj1 %% proj2)) (proj2 %% proj2)
+
+class SemigroupalCategory cat => MonoidalCategory (cat :: k -> k -> Type) where
+    type Unit cat :: k
+
+    lunit :: cat (Tensor cat (Unit cat) a) a
+    runit :: cat (Tensor cat a (Unit cat)) a
+
+    unlunit :: cat a (Tensor cat (Unit cat) a)
+    unrunit :: cat a (Tensor cat a (Unit cat))
+
+defaultLunit :: (CartesianCategory cat, Tensor cat ~ Product cat) => cat (Tensor cat (Unit cat) a) a
+defaultLunit = proj2
+
+defaultRunit :: (CartesianCategory cat, Tensor cat ~ Product cat) => cat (Tensor cat a (Unit cat)) a
+defaultRunit = proj1
+
+defaultUnlunit :: (CategoryWith1 cat, Tensor cat ~ Product cat, Unit cat ~ Terminal cat) => cat a (Tensor cat (Unit cat) a)
+defaultUnlunit = fanout terminal identity
+
+defaultUnrunit :: (CategoryWith1 cat, Tensor cat ~ Product cat, Unit cat ~ Terminal cat) => cat a (Tensor cat a (Unit cat))
+defaultUnrunit = fanout identity terminal
 
 -------------------------------------------------------------------------------
 -- Product
 -------------------------------------------------------------------------------
 
 -- | Category with terminal object.
-class C.Category cat => CategoryWith1 (cat :: k -> k -> Type) where
+class CartesianCategory cat => CategoryWith1 (cat :: k -> k -> Type) where
     type Terminal cat :: k
 
     terminal :: cat a (Terminal cat)
@@ -163,7 +206,7 @@ class C.Category cat => CategoryWith1 (cat :: k -> k -> Type) where
 -- | Cartesian category is a monoidal category
 -- where monoidal product is the categorical product.
 --
-class CategoryWith1 cat => CartesianCategory (cat :: k -> k -> Type) where
+class C.Category cat => CartesianCategory (cat :: k -> k -> Type) where
     type Product cat :: k -> k -> k
 
     proj1 :: cat (Product cat a b) a
@@ -201,7 +244,7 @@ instance CartesianCategory Op where
 -------------------------------------------------------------------------------
 
 -- | Category with initial object.
-class C.Category cat => CategoryWith0 (cat :: k -> k -> Type) where
+class CocartesianCategory cat => CategoryWith0 (cat :: k -> k -> Type) where
     type Initial cat :: k
 
     initial :: cat (Initial cat) a
@@ -209,7 +252,7 @@ class C.Category cat => CategoryWith0 (cat :: k -> k -> Type) where
 -- | Cocartesian category is a monoidal category
 -- where monoidal product is the categorical coproduct.
 --
-class CategoryWith0 cat => CocartesianCategory (cat :: k -> k -> Type) where
+class C.Category cat => CocartesianCategory (cat :: k -> k -> Type) where
     type Coproduct cat :: k -> k -> k
 
     inl :: cat a (Coproduct cat a b)
@@ -317,6 +360,84 @@ instance GeneralizedElement (->) where
     konst = const
 
 -------------------------------------------------------------------------------
+-- Star
+-------------------------------------------------------------------------------
+
+instance Monad m => CartesianCategory (Star m) where
+    type Product (Star m) = (,)
+
+    proj1 = Star (pure . proj1)
+    proj2 = Star (pure . proj2)
+
+    fanout (Star f) (Star g) = Star $ \a -> liftA2 (,) (f a) (g a)
+
+instance Monad m => CategoryWith1 (Star m) where
+    type Terminal (Star m) = ()
+
+    terminal = Star (pure . terminal)
+
+instance Monad m => CocartesianCategory (Star m) where
+    type Coproduct (Star m) = Either
+
+    inl = Star (pure . inl)
+    inr = Star (pure . inr)
+
+    fanin (Star f) (Star g) = Star (fanin f g)
+
+instance Monad m => CategoryWith0 (Star m) where
+    type Initial (Star m) = Void
+
+    initial = Star (pure . initial)
+
+instance Monad m => BicartesianCategory (Star m) where
+    distr = Star (pure . distr)
+
+instance Monad m => CCC (Star m) where
+    type Exponential (Star m) = Star m
+
+    eval = Star $ uncurry runStar
+    transpose (Star f) = Star $ \a -> pure $ Star $ \b -> f (a, b)
+
+-------------------------------------------------------------------------------
+-- Kleisli
+-------------------------------------------------------------------------------
+
+instance Monad m => CartesianCategory (Kleisli m) where
+    type Product (Kleisli m) = (,)
+
+    proj1 = Kleisli (pure . proj1)
+    proj2 = Kleisli (pure . proj2)
+
+    fanout (Kleisli f) (Kleisli g) = Kleisli $ \a -> liftA2 (,) (f a) (g a)
+
+instance Monad m => CategoryWith1 (Kleisli m) where
+    type Terminal (Kleisli m) = ()
+
+    terminal = Kleisli (pure . terminal)
+
+instance Monad m => CocartesianCategory (Kleisli m) where
+    type Coproduct (Kleisli m) = Either
+
+    inl = Kleisli (pure . inl)
+    inr = Kleisli (pure . inr)
+
+    fanin (Kleisli f) (Kleisli g) = Kleisli (fanin f g)
+
+instance Monad m => CategoryWith0 (Kleisli m) where
+    type Initial (Kleisli m) = Void
+
+    initial = Kleisli (pure . initial)
+
+instance Monad m => BicartesianCategory (Kleisli m) where
+    distr = Kleisli (pure . distr)
+
+instance Monad m => CCC (Kleisli m) where
+    type Exponential (Kleisli m) = Kleisli m
+
+    eval = Kleisli $ uncurry runKleisli
+    transpose (Kleisli f) = Kleisli $ \a -> pure $ Kleisli $ \b -> f (a, b)
+
+-------------------------------------------------------------------------------
 -- WrappedArrow
 -------------------------------------------------------------------------------
 
@@ -336,7 +457,7 @@ instance A.Arrow arr => CartesianCategory (WrappedArrow arr) where
     proj2 = WrapArrow (A.arr proj2)
     fanout (WrapArrow f) (WrapArrow g) = WrapArrow (f A.&&& g)
 
-instance A.Arrow arr => CategoryWith0 (WrappedArrow arr) where
+instance A.ArrowChoice arr => CategoryWith0 (WrappedArrow arr) where
     type Initial (WrappedArrow arr) = Void
     initial = WrapArrow (A.arr absurd)
 

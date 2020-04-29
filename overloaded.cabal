@@ -74,6 +74,7 @@ library
     , assoc            ^>=1.0.1
     , bin              ^>=0.1
     , fin              ^>=0.1
+    , profunctors      ^>=5.3
     , ral              ^>=0.1
     , record-hasfield  ^>=1.0
     , semigroupoids    ^>=5.3.4
