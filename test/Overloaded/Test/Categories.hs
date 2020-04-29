@@ -1,17 +1,18 @@
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE Arrows    #-}
 {-# LANGUAGE PolyKinds #-}
 {-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Categories=Overloaded.Categories.identity #-}
 module Overloaded.Test.Categories where
 
-import Data.Bifunctor.Assoc  (assoc)
 import Test.QuickCheck       ((===))
 import Test.QuickCheck.Poly  (A, B, C)
 import Test.Tasty            (TestTree, testGroup)
 import Test.Tasty.HUnit      (testCase, (@?=))
 import Test.Tasty.QuickCheck (testProperty)
 
-import Overloaded.Categories
+import qualified Data.Bifunctor.Assoc as Assoc
+
 import AD
+import Overloaded.Categories
 import STLC
 
 tests :: TestTree
@@ -56,7 +57,7 @@ tests = testGroup "Categories"
 
         ]
     , testProperty "assoc (->)" $ \abc ->
-        assoc abc === catAssoc (abc :: ((A, B), C))
+        Assoc.assoc abc === catAssoc (abc :: ((A, B), C))
 
     , testCase "assoc Mapping" $ do
         let M rhs = catAssoc
@@ -65,7 +66,7 @@ tests = testGroup "Categories"
         show rhs @?= lhs
 
     , testProperty "assocCo (->)" $ \abc ->
-        assoc abc === catAssocCo (abc :: Either (Either A B) C)
+        Assoc.assoc abc === catAssocCo (abc :: Either (Either A B) C)
 
     , testCase "assocCo Mapping" $ do
         let M rhs = catAssocCo
@@ -123,11 +124,11 @@ catKonst
     => Object cat a
     -> Object cat b
     -> cat c (Product cat a b)
-catKonst a b = proc _ -> do
-    a' <- konst a -< ()
-    b' <- konst b -< ()
+catKonst a b = proc c -> do
+    a' <- konst a -< c
+    b' <- konst b -< c
     identity -< (a', b')
-    
+
 quad :: Num a => AD (a, a) a
 quad = proc (x, y) -> do
     x2 <- mult -< (x, x)

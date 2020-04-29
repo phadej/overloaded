@@ -109,20 +109,30 @@
 -- be definable!
 --
 module Overloaded.Categories (
+    -- * Category
     C.Category,
     identity,
     (%%),
+    -- * Monoidial
     SemigroupalCategory (..),
     defaultAssoc, defaultUnassoc,
     MonoidalCategory (..),
     defaultLunit, defaultRunit, defaultUnrunit, defaultUnlunit,
-    CategoryWith1 (..),
+    CommutativeCategory (..),
+    defaultSwap,
+    -- * Product and Terminal
     CartesianCategory (..),
+    CategoryWith1 (..),
+    -- * Coproduct and initial
     CategoryWith0 (..),
     CocartesianCategory (..),
+    -- * Bicartesian
     BicartesianCategory (..),
+    -- * Closed cartesian category
     CCC (..),
+    -- * Generalized element
     GeneralizedElement (..),
+    -- * WrappedArrow
     WrappedArrow (..),
     ) where
 
@@ -192,6 +202,12 @@ defaultUnlunit = fanout terminal identity
 
 defaultUnrunit :: (CategoryWith1 cat, Tensor cat ~ Product cat, Unit cat ~ Terminal cat) => cat a (Tensor cat a (Unit cat))
 defaultUnrunit = fanout identity terminal
+
+class SemigroupalCategory cat => CommutativeCategory cat where
+    swap :: cat (Tensor cat a b) (Tensor cat b a)
+
+defaultSwap :: (CartesianCategory cat, Tensor cat ~ Product cat) => cat (Tensor cat a b) (Tensor cat b a)
+defaultSwap = fanout proj2 proj1
 
 -------------------------------------------------------------------------------
 -- Product
