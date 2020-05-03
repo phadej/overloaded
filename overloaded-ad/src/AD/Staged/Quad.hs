@@ -9,6 +9,9 @@ import Data.Vec.Lazy (Vec (..))
 
 import AD.Staged.Types
 import AD.Staged.Quad.Network (quad)
+import Data.Type.Nat.PlusTree
+
+import qualified Data.Type.Nat    as N
 
 -------------------------------------------------------------------------------
 -- Quad
@@ -24,7 +27,19 @@ evalQuad x y =
           , show $$(stoCode v)
           , show ($$(stoCode dx), $$(stoCode dy))
           ]
-        ||]) 
+        ||])
+
+evalTanh :: Double -> IO ()
+evalTanh x =
+    $$(evaluateAD (tanhAD @('Leaf N.Nat1)) (Dyn [|| x ||] ::: VNil) $ \(v ::: VNil) ((dx ::: VNil) ::: VNil) -> [||
+        putStrLn $ unwords
+          [ "tanh"
+          , show x
+          , "="
+          , show $$(stoCode v)
+          , show $$(stoCode dx)
+          ]
+        ||])
 
 quadTest :: IO ()
 quadTest = do
@@ -37,6 +52,7 @@ quadTest = do
           , show $$(stoCode v)
           , show ($$(stoCode dx), $$(stoCode dy))
           ]
-        ||]) 
+        ||])
 
     evalQuad 2 3
+    evalTanh 1

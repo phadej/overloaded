@@ -4,8 +4,6 @@
 {-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Categories=Overloaded.Categories.Constrained.identity #-}
 module AD.Staged.Quad.Network where
 
-import Data.Vec.Lazy (Vec (..))
-
 import qualified Data.Type.Nat as N
 import qualified Data.Vec.Lazy as V
 

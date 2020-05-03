@@ -67,36 +67,36 @@ sletrec_NSNP body args0 = do
 data S
     = Dyn (Code Double)
     | Sta Double
-    | Sone
-    | Szero
+    | S1
+    | S0
 
 stoCode :: S -> Code Double
-stoCode Szero   = [|| 0 :: Double ||]
-stoCode Sone    = [|| 1 :: Double ||]
+stoCode S0   = [|| 0 :: Double ||]
+stoCode S1    = [|| 1 :: Double ||]
 stoCode (Sta d) = [|| $$(liftTyped d) :: Double ||]
 stoCode (Dyn d) = d
 
 szero :: S
-szero = Szero
+szero = S0
 
 sone :: S
-sone = Sone
+sone = S1
 
 splus :: S -> S -> S
-splus Szero   x       = x
-splus x       Szero   = x
-splus Sone    Sone    = Sta 2
-splus (Sta x) Sone    = Sta (x + 1)
-splus Sone    (Sta y) = Sta (y + 1)
+splus S0   x       = x
+splus x       S0   = x
+splus S1    S1    = Sta 2
+splus (Sta x) S1    = Sta (x + 1)
+splus S1    (Sta y) = Sta (y + 1)
 splus (Sta x) (Sta y) = Sta (x + y)
 splus (Dyn x) y       = Dyn [|| $$x + $$(stoCode y) ||]
 splus x       (Dyn y) = Dyn [|| $$(stoCode x) + $$y ||]
 
 smult :: S -> S -> S
-smult Szero   _       = Szero
-smult _       Szero   = Szero
-smult x       Sone    = x
-smult Sone    y       = y
+smult S0   _       = S0
+smult _       S0   = S0
+smult x       S1    = x
+smult S1    y       = y
 smult (Sta x) (Sta y) = Sta (x * y)
 smult (Dyn x) y       = Dyn [|| $$x * $$(stoCode y) ||]
 smult x       (Dyn y) = Dyn [|| $$(stoCode x) * $$y ||]
@@ -105,15 +105,32 @@ instance Num S where
     fromInteger = Sta . fromInteger
     (+) = splus
     (*) = smult
-    
+
     negate = smult (Sta (-1))
 
     abs    _ = error "abs @S: not implemented"
     signum _ = error "abs @S: not implemented"
 
+-------------------------------------------------------------------------------
+-- Scalar + Code
+-------------------------------------------------------------------------------
 
-sapply :: Code (Double -> Double) -> S -> Code Double
-sapply f x = [|| $$f $$(stoCode x) ||]
+sapply
+    :: (Double -> Double)            -- ^ function
+    -> (Code Double -> Code Double)  -- ^ function code
+    -> S -> S
+sapply f _  S0      = Sta (f 0)
+sapply f _  S1      = Sta (f 1)
+sapply f _  (Sta x) = Sta (f x)
+sapply _ fc (Dyn x) = Dyn (fc x)
+
+slet_ :: Vec n S -> (Vec n S -> Code r) -> Code r
+slet_ VNil           kont = kont VNil
+slet_ (Dyn x ::: xs) kont = slet_ xs $ \ys ->
+    [|| let _lettmp = $$x in $$(kont $ Dyn [|| _lettmp ||] ::: ys) ||]
+-- rest bindings are static:
+slet_ (x ::: xs)     kont = slet_ xs $ \ys ->
+    kont (x ::: ys)
 
 -------------------------------------------------------------------------------
 -- Vec tools
@@ -289,8 +306,10 @@ dot = bilinearS eye
 
 tanhAD :: AD a a
 tanhAD = AD $ \x k ->
-    let_ (V.map (sapply [|| tanh ||]) x) $ \y ->
-    k (V.map Dyn y) (lscaleV (V.map (\x' -> Dyn [|| 1 - $$x' * $$x' ||]) y))
+    slet_ (V.map (sapply tanh (\x' -> [|| tanh $$x' ||])) x) $ \y ->
+    k y (lscaleV (V.map tanh' y))
+  where
+    tanh' = sapply (\x -> 1 - x * x) (\x -> [|| 1 - $$x * $$x ||])
 
 -------------------------------------------------------------------------------
 -- Evaluation
