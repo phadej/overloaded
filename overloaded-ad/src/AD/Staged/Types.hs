@@ -102,7 +102,10 @@ smult (Dyn x) y       = Dyn [|| $$x * $$(stoCode y) ||]
 smult x       (Dyn y) = Dyn [|| $$(stoCode x) * $$y ||]
 
 instance Num S where
-    fromInteger = Sta . fromInteger
+    fromInteger 0 = S0
+    fromInteger 1 = S1
+    fromInteger n = Sta (fromInteger n)
+
     (+) = splus
     (*) = smult
 
