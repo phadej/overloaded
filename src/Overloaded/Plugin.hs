@@ -220,6 +220,13 @@ pluginImpl args' env gr = do
             n <- lookupVarName dflags topEnv vn
             return $ transformLabels $ names { fromLabelName = n }
 
+    trCodeLabel <- case optCodeLabels of
+        Off          -> return transformNoOp
+        On Nothing   -> return $ transformCodeLabels names
+        On (Just vn) -> do
+            n <- lookupVarName dflags topEnv vn
+            return $ transformCodeLabels $ names { codeFromLabelName = n }
+
     trBrackets <- case optIdiomBrackets of
         False -> return transformNoOp
         True  -> return $ transformIdiomBrackets names
@@ -256,7 +263,19 @@ pluginImpl args' env gr = do
             n <- lookupTypeName dflags topEnv vn
             return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    let tr  = trStr <> trNum <> trChr <> trLists <> trIf <> trLabel <> trBrackets <> trDo <> trCategories <> trUnit
+    let tr  = mconcat
+            [ trStr
+            , trNum
+            , trChr
+            , trLists
+            , trIf
+            , trLabel
+            , trCodeLabel
+            , trBrackets
+            , trDo
+            , trCategories
+            , trUnit
+            ]
     let trT = trTypeNats <> trTypeSymbols
 
     gr' <- transformType dflags trT gr
@@ -271,7 +290,17 @@ pluginImpl args' env gr = do
 -------------------------------------------------------------------------------
 
 parseArgs :: forall m. MonadIO m => GHC.DynFlags -> [String] -> m Options
-parseArgs dflags = foldM go0 defaultOptions where
+parseArgs dflags args0 = foldM go0 defaultOptions args0 >>= check where
+    check :: Options -> m Options
+    check opts = do
+        when (isOn (optLabels opts) && isOn (optCodeLabels opts)) $
+            warn dflags noSrcSpan $
+                GHC.text "Overloaded:Strings and Overloaded:Symbols enabled"
+                GHC.$$
+                GHC.text "picking Overloaded:Strings"
+
+        return opts
+
     go0 opts arg = do
         (arg', vns) <- elaborateArg arg
         go opts arg' vns
@@ -325,8 +354,11 @@ parseArgs dflags = foldM go0 defaultOptions where
         mvn <- oneName "Unit" vns
         return $ opts { optUnit = On mvn }
     go opts "Labels"   vns = do
-        mvn <- oneName "Symbols" vns
+        mvn <- oneName "Labels" vns
         return $ opts { optLabels = On mvn }
+    go opts "CodeLabels" vns = do
+        mvn <- oneName "CodeLabels" vns
+        return $ opts { optCodeLabels = On mvn }
     go opts "TypeNats" vns = do
         mvn <- oneName "TypeNats" vns
         return $ opts { optTypeNats = On mvn }
@@ -385,6 +417,7 @@ data Options = Options
     , optLists         :: OnOff (V2 VarName)
     , optIf            :: OnOff VarName
     , optLabels        :: OnOff VarName
+    , optCodeLabels    :: OnOff VarName
     , optUnit          :: OnOff VarName
     , optTypeNats      :: OnOff VarName
     , optTypeSymbols   :: OnOff VarName
@@ -403,6 +436,7 @@ defaultOptions = Options
     , optLists         = Off
     , optIf            = Off
     , optLabels        = Off
+    , optCodeLabels    = Off
     , optTypeNats      = Off
     , optTypeSymbols   = Off
     , optUnit          = Off
@@ -444,6 +478,10 @@ data OnOff a
     = Off
     | On (Maybe a)
   deriving (Eq, Show)
+
+isOn :: OnOff a -> Bool
+isOn (On _) = True
+isOn Off    = False
 
 -------------------------------------------------------------------------------
 -- OverloadedStrings
@@ -544,6 +582,19 @@ transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
 transformLabels _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
+-- OverloadedCodeLabels
+-------------------------------------------------------------------------------
+
+transformCodeLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+transformCodeLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
+    let name' = hsVar l codeFromLabelName
+    let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
+    -- Rewrite $ L l $ HsRnBracketOut noExtField (ExpBr noExtField inner) []
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField HasParens n inner
+
+transformCodeLabels _ _ = NoRewrite
+
+-------------------------------------------------------------------------------
 -- OverloadedUnit
 -------------------------------------------------------------------------------
 
@@ -586,15 +637,19 @@ transform
     -> GHC.TcM (HsGroup GhcRn)
 transform dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> GHC.TcM (LHsExpr GhcRn)
-    transform' e@(L _l _) = do
+    transform' e@(L l _) = do
         -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
         --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
-        case f e of
-            Rewrite e' -> return e'
-            NoRewrite  -> return e
-            Error err  -> do
-                liftIO $ err dflags
-                fail "Error in Overloaded plugin"
+        go (f e)
+      where
+        go NoRewrite    = return e
+        go (Rewrite e') = return e'
+        go (Error err)  = do
+            liftIO $ err dflags
+            fail "Error in Overloaded plugin"
+        go (WithName kont) = do
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            go (kont n)
 
 transformType
     :: GHC.DynFlags
@@ -603,10 +658,13 @@ transformType
     -> GHC.TcM (HsGroup GhcRn)
 transformType dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsType GhcRn -> GHC.TcM (LHsType GhcRn)
-    transform' e = do
-        case f e of
-            Rewrite e' -> return e'
-            NoRewrite  -> return e
-            Error err  -> do
-                liftIO $ err dflags
-                fail "Error in Overloaded plugin"
+    transform' e@(L l _) = go (f e)
+      where
+        go NoRewrite    = return e
+        go (Rewrite e') = return e'
+        go (Error err)  = do
+            liftIO $ err dflags
+            fail "Error in Overloaded plugin"
+        go (WithName kont) = do
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            go (kont n)

@@ -45,6 +45,7 @@ data Names = Names
     , doBindName         :: GHC.Name
     , conLeftName        :: GHC.Name
     , conRightName       :: GHC.Name
+    , codeFromLabelName  :: GHC.Name
     , catNames           :: CatNames
     }
 
@@ -92,6 +93,8 @@ getNames dflags env = do
 
     conLeftName  <- lookupNameDataCon dflags env dataEitherMN "Left"
     conRightName <- lookupNameDataCon dflags env dataEitherMN "Right"
+
+    codeFromLabelName <- lookupName dflags env overloadedCodeLabelsMN "codeFromLabel"
 
     catNames <- getCatNames dflags env overloadedCategoriesMN
 
@@ -183,6 +186,9 @@ overloadedCategoriesMN =  GHC.mkModuleName "Overloaded.Categories"
 
 ghcOverloadedLabelsMN :: GHC.ModuleName
 ghcOverloadedLabelsMN =  GHC.mkModuleName "GHC.OverloadedLabels"
+
+overloadedCodeLabelsMN :: GHC.ModuleName
+overloadedCodeLabelsMN =  GHC.mkModuleName "Overloaded.CodeLabels"
 
 overloadedTypeNatsMN :: GHC.ModuleName
 overloadedTypeNatsMN =  GHC.mkModuleName "Overloaded.TypeNats"

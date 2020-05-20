@@ -4,6 +4,7 @@ import Test.Tasty (defaultMain, testGroup)
 
 import qualified Overloaded.Test.Categories as Cat
 import qualified Overloaded.Test.Chars      as Chr
+import qualified Overloaded.Test.CodeLabels as Cdl
 import qualified Overloaded.Test.Do         as Doo
 import qualified Overloaded.Test.If         as Iff
 import qualified Overloaded.Test.Labels     as Lbl
@@ -19,6 +20,7 @@ import qualified Overloaded.Test.Labels.GenericLens as GL
 main :: IO ()
 main = defaultMain $ testGroup "Tests"
     [ Chr.tests
+    , Cdl.tests
     , Iff.tests
     , Doo.tests
     , Lbl.tests
