@@ -38,6 +38,7 @@ library
     Overloaded.Categories
     Overloaded.Chars
     Overloaded.CodeLabels
+    Overloaded.CodeStrings
     Overloaded.Do
     Overloaded.If
     Overloaded.Lists
@@ -205,6 +206,7 @@ test-suite test
     Overloaded.Test.Chars
     Overloaded.Test.CodeLabels
     Overloaded.Test.CodeLabels.String
+    Overloaded.Test.CodeStrings
     Overloaded.Test.Do
     Overloaded.Test.If
     Overloaded.Test.Labels
@@ -236,6 +238,7 @@ test-suite test
     , record-hasfield
     , sop-core
     , symbols
+    , template-haskell
     , text
     , time
     , vec

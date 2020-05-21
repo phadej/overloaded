@@ -13,5 +13,9 @@ import Overloaded.Test.CodeLabels.String
 
 tests :: TestTree
 tests = testGroup "Labels"
-    [ testCase "NES" $ #foo @?= "FOO"
+    [ testCase "String" $ do
+        -- we need type annotations :(
+        -- https://gitlab.haskell.org/ghc/ghc/issues/18211
+        (#foo :: String) @?= ("FOO" :: String)
+        (#bar :: String) @?= ("BAR" :: String)
     ]
