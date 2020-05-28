@@ -215,6 +215,7 @@ test-suite test
     Overloaded.Test.Lists.Bidi
     Overloaded.Test.Naturals
     Overloaded.Test.Numerals
+    Overloaded.Test.RebindableApplications
     Overloaded.Test.RecordFields
     Overloaded.Test.Strings
     Overloaded.Test.Symbols
