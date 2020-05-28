@@ -26,6 +26,9 @@ module GHC.Compat.Expr (
     -- * Patterns
     LPat,
     Pat (..),
+    -- * Splices
+    HsSplice (..),
+    SpliceDecoration (..),
     -- * Proc commands
     HsCmdTop (..),
     HsCmd (..),

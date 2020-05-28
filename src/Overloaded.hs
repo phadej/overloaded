@@ -29,6 +29,12 @@ module Overloaded (
     -- * Overloaded:Labels
     -- | See "GHC.OverloadedLabels" for 'GHC.OverloadedLabels.fromLabel'.
 
+    -- * Overloaded:CodeLabels
+    IsCodeLabel (..),
+
+    -- * Overloaded:CodeStrings
+    IsCodeString (..),
+
     -- * Overloaded:TypeNats
     FromNatC (..),
 
@@ -53,6 +59,8 @@ module Overloaded (
 
 import Overloaded.Categories
 import Overloaded.Chars
+import Overloaded.CodeLabels
+import Overloaded.CodeStrings
 import Overloaded.Do
 import Overloaded.If
 import Overloaded.Lists

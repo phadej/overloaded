@@ -170,18 +170,22 @@ pluginImpl args' env gr = do
         transformNoOp _ = NoRewrite
 
     trStr <- case optStrings of
-        NoStr         -> return transformNoOp
-        Str Nothing   -> return $ transformStrings names
-        Sym Nothing   -> return $ transformSymbols names
-        Str (Just vn) -> do
+        NoStr             -> return transformNoOp
+        Str Nothing       -> return $ transformStrings names
+        Sym Nothing       -> return $ transformSymbols names
+        CodeStr Nothing   -> return $ transformCodeStrings names
+        Str (Just vn)     -> do
             n <- lookupVarName dflags topEnv vn
             return $ transformStrings $ names { fromStringName = n }
-        Sym (Just vn) -> do
+        Sym (Just vn)     -> do
             n <- lookupVarName dflags topEnv vn
             return $ transformSymbols $ names { fromSymbolName = n }
+        CodeStr (Just vn) -> do
+            n <- lookupVarName dflags topEnv vn
+            return $ transformSymbols $ names { codeFromStringName = n }
 
     trNum <- case optNumerals of
-        NoNum         -> return transformNoOp
+        NoNum           -> return transformNoOp
         IsNum Nothing   -> return $ transformNumerals names
         IsNat Nothing   -> return $ transformNaturals names
         IsNum (Just vn) -> do
@@ -214,11 +218,15 @@ pluginImpl args' env gr = do
             return $ transformIf $ names { ifteName = n }
 
     trLabel <- case optLabels of
-        Off          -> return transformNoOp
-        On Nothing   -> return $ transformLabels names
-        On (Just vn) -> do
+        NoLabel                 -> return transformNoOp
+        Label Nothing       -> return $ transformLabels names
+        CodeLabel Nothing   -> return $ transformCodeLabels names
+        Label (Just vn)     -> do
             n <- lookupVarName dflags topEnv vn
             return $ transformLabels $ names { fromLabelName = n }
+        CodeLabel (Just vn) -> do
+            n <- lookupVarName dflags topEnv vn
+            return $ transformCodeLabels $ names { codeFromLabelName = n }
 
     trBrackets <- case optIdiomBrackets of
         False -> return transformNoOp
@@ -256,7 +264,18 @@ pluginImpl args' env gr = do
             n <- lookupTypeName dflags topEnv vn
             return $ transformTypeSymbols $ names { fromTypeSymbolName = n }
 
-    let tr  = trStr <> trNum <> trChr <> trLists <> trIf <> trLabel <> trBrackets <> trDo <> trCategories <> trUnit
+    let tr  = mconcat
+            [ trStr
+            , trNum
+            , trChr
+            , trLists
+            , trIf
+            , trLabel
+            , trBrackets
+            , trDo
+            , trCategories
+            , trUnit
+            ]
     let trT = trTypeNats <> trTypeSymbols
 
     gr' <- transformType dflags trT gr
@@ -272,42 +291,45 @@ pluginImpl args' env gr = do
 
 parseArgs :: forall m. MonadIO m => GHC.DynFlags -> [String] -> m Options
 parseArgs dflags = foldM go0 defaultOptions where
+    ambWarn :: String -> String -> m ()
+    ambWarn x y = warn dflags noSrcSpan $
+        GHC.text ("Overloaded:" ++ x ++ " and Overloaded:" ++ y ++ " enabled")
+        GHC.$$
+        GHC.text ("picking Overloaded:" ++ y)
+
     go0 opts arg = do
         (arg', vns) <- elaborateArg arg
         go opts arg' vns
 
     go opts "Strings" vns = do
-        when (isSym $ optStrings opts) $ warn dflags noSrcSpan $
-            GHC.text "Overloaded:Strings and Overloaded:Symbols enabled"
-            GHC.$$
-            GHC.text "picking Overloaded:Strings"
+        when (isSym $ optStrings opts)     $ ambWarn "Symbols" "Strings"
+        when (isCodeStr $ optStrings opts) $ ambWarn "CodeStrings" "Strings"
 
         mvn <- oneName "Strings" vns
         return $ opts { optStrings = Str mvn }
 
     go opts "Symbols" vns = do
-        when (isStr $ optStrings opts) $ warn dflags noSrcSpan $
-            GHC.text "Overloaded:Strings and Overloaded:Symbols enabled"
-            GHC.$$
-            GHC.text "picking Overloaded:Symbols"
+        when (isStr $ optStrings opts)     $ ambWarn "Strings" "Symbols"
+        when (isCodeStr $ optStrings opts) $ ambWarn "CodeStrings" "Symbols"
 
         mvn <- oneName "Symbols" vns
         return $ opts { optStrings = Sym mvn }
 
+    go opts "CodeStrings" vns = do
+        when (isStr $ optStrings opts) $ ambWarn "Strings" "CodeStrings"
+        when (isSym $ optStrings opts) $ ambWarn "Symbols" "CodeStrings"
+
+        mvn <- oneName "CodeStrings" vns
+        return $ opts { optStrings = CodeStr mvn }
+
     go opts "Numerals" vns = do
-        when (isNat $ optNumerals opts) $ warn dflags noSrcSpan $
-            GHC.text "Overloaded:Numerals and Overloaded:Naturals enabled"
-            GHC.$$
-            GHC.text "picking Overloaded:Numerals"
+        when (isNat $ optNumerals opts) $ ambWarn "Naturals" "Numerals"
 
         mvn <- oneName "Numerals" vns
         return $ opts { optNumerals = IsNum mvn }
 
     go opts "Naturals" vns = do
-        when (isNum $ optNumerals opts) $ warn dflags noSrcSpan $
-            GHC.text "Overloaded:Numerals and Overloaded:Naturals enabled"
-            GHC.$$
-            GHC.text "picking Overloaded:Naturals"
+        when (isNum $ optNumerals opts) $ ambWarn "Numerals" "Naturals"
 
         mvn <- oneName "Naturals" vns
         return $ opts { optNumerals = IsNat mvn }
@@ -325,8 +347,15 @@ parseArgs dflags = foldM go0 defaultOptions where
         mvn <- oneName "Unit" vns
         return $ opts { optUnit = On mvn }
     go opts "Labels"   vns = do
-        mvn <- oneName "Symbols" vns
-        return $ opts { optLabels = On mvn }
+        when (isCodeLabel $ optLabels opts) $ ambWarn "CodeLabels" "Labels"
+
+        mvn <- oneName "Labels" vns
+        return $ opts { optLabels = Label mvn }
+    go opts "CodeLabels" vns = do
+        when (isLabel $ optLabels opts) $ ambWarn "Labels" "CodeLabels"
+
+        mvn <- oneName "CodeLabels" vns
+        return $ opts { optLabels = CodeLabel mvn }
     go opts "TypeNats" vns = do
         mvn <- oneName "TypeNats" vns
         return $ opts { optTypeNats = On mvn }
@@ -384,7 +413,7 @@ data Options = Options
     , optChars         :: OnOff VarName
     , optLists         :: OnOff (V2 VarName)
     , optIf            :: OnOff VarName
-    , optLabels        :: OnOff VarName
+    , optLabels        :: LabelOpt
     , optUnit          :: OnOff VarName
     , optTypeNats      :: OnOff VarName
     , optTypeSymbols   :: OnOff VarName
@@ -402,7 +431,7 @@ defaultOptions = Options
     , optChars         = Off
     , optLists         = Off
     , optIf            = Off
-    , optLabels        = Off
+    , optLabels        = NoLabel
     , optTypeNats      = Off
     , optTypeSymbols   = Off
     , optUnit          = Off
@@ -416,6 +445,7 @@ data StrSym
     = NoStr
     | Str (Maybe VarName)
     | Sym (Maybe VarName)
+    | CodeStr (Maybe VarName)
   deriving (Eq, Show)
 
 isSym :: StrSym -> Bool
@@ -426,6 +456,10 @@ isStr :: StrSym -> Bool
 isStr (Str _) = True
 isStr _       = False
 
+isCodeStr :: StrSym -> Bool
+isCodeStr (CodeStr _) = True
+isCodeStr _           = False
+
 data NumNat
     = NoNum
     | IsNum (Maybe VarName)
@@ -434,11 +468,25 @@ data NumNat
 
 isNum :: NumNat -> Bool
 isNum (IsNum _) = True
-isNum _       = False
+isNum _         = False
 
 isNat :: NumNat -> Bool
 isNat (IsNat _) = True
 isNat _         = False
+
+data LabelOpt
+    = NoLabel
+    | Label (Maybe VarName)
+    | CodeLabel (Maybe VarName)
+  deriving (Eq, Show)
+
+isLabel :: LabelOpt -> Bool
+isLabel (Label _) = True
+isLabel _         = False
+
+isCodeLabel :: LabelOpt -> Bool
+isCodeLabel (CodeLabel _) = True
+isCodeLabel _             = False
 
 data OnOff a
     = Off
@@ -466,6 +514,17 @@ transformSymbols Names {..} (L l (HsLit _ (HsString _ fs))) = do
     Rewrite inner
 
 transformSymbols _ _ = NoRewrite
+
+-------------------------------------------------------------------------------
+-- OverloadedCodeStrings
+-------------------------------------------------------------------------------
+
+transformCodeStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+transformCodeStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) = do
+    let inner = hsApps l (hsVar l codeFromStringName) [e]
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField HasParens n inner
+
+transformCodeStrings _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- OverloadedNumerals
@@ -544,6 +603,19 @@ transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
 transformLabels _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
+-- OverloadedCodeLabels
+-------------------------------------------------------------------------------
+
+transformCodeLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+transformCodeLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
+    let name' = hsVar l codeFromLabelName
+    let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
+    -- Rewrite $ L l $ HsRnBracketOut noExtField (ExpBr noExtField inner) []
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField HasParens n inner
+
+transformCodeLabels _ _ = NoRewrite
+
+-------------------------------------------------------------------------------
 -- OverloadedUnit
 -------------------------------------------------------------------------------
 
@@ -586,15 +658,19 @@ transform
     -> GHC.TcM (HsGroup GhcRn)
 transform dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> GHC.TcM (LHsExpr GhcRn)
-    transform' e@(L _l _) = do
+    transform' e@(L l _) = do
         -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
         --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
-        case f e of
-            Rewrite e' -> return e'
-            NoRewrite  -> return e
-            Error err  -> do
-                liftIO $ err dflags
-                fail "Error in Overloaded plugin"
+        go (f e)
+      where
+        go NoRewrite    = return e
+        go (Rewrite e') = return e'
+        go (Error err)  = do
+            liftIO $ err dflags
+            fail "Error in Overloaded plugin"
+        go (WithName kont) = do
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            go (kont n)
 
 transformType
     :: GHC.DynFlags
@@ -603,10 +679,13 @@ transformType
     -> GHC.TcM (HsGroup GhcRn)
 transformType dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsType GhcRn -> GHC.TcM (LHsType GhcRn)
-    transform' e = do
-        case f e of
-            Rewrite e' -> return e'
-            NoRewrite  -> return e
-            Error err  -> do
-                liftIO $ err dflags
-                fail "Error in Overloaded plugin"
+    transform' e@(L l _) = go (f e)
+      where
+        go NoRewrite    = return e
+        go (Rewrite e') = return e'
+        go (Error err)  = do
+            liftIO $ err dflags
+            fail "Error in Overloaded plugin"
+        go (WithName kont) = do
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            go (kont n)
