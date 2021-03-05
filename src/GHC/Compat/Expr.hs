@@ -53,7 +53,9 @@ module GHC.Compat.Expr (
 #endif
     -- * Statements
     HsGroup,
-    -- * Reader phase
+    HsModule,
+    -- * phases
+    GhcPs,
     GhcRn,
     -- * SourceSpan
     Located,

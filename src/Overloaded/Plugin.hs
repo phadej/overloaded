@@ -138,7 +138,8 @@ import Overloaded.Plugin.V
 --
 plugin :: Plugins.Plugin
 plugin = Plugins.defaultPlugin
-    { Plugins.renamedResultAction = pluginImpl
+    { Plugins.renamedResultAction = renamedAction
+    , Plugins.parsedResultAction  = parsedAction
     , Plugins.tcPlugin            = enabled tcPlugin
     , Plugins.pluginRecompile     = Plugins.purePlugin
     }
@@ -149,12 +150,16 @@ plugin = Plugins.defaultPlugin
       where
         args = concatMap (splitOn ":") args'
 
-pluginImpl
+-------------------------------------------------------------------------------
+-- Renamer
+-------------------------------------------------------------------------------
+
+renamedAction
     :: [Plugins.CommandLineOption]
     -> GHC.TcGblEnv
     -> HsGroup GhcRn
     -> GHC.TcM (GHC.TcGblEnv, HsGroup GhcRn)
-pluginImpl args' env gr = do
+renamedAction args' env gr = do
     dflags <- GHC.getDynFlags
     topEnv <- GHC.getTopEnv
 
@@ -279,11 +284,42 @@ pluginImpl args' env gr = do
     let trT = trTypeNats <> trTypeSymbols
 
     gr' <- transformType dflags trT gr
-    gr'' <- transform dflags tr gr'
+    gr'' <- transformRn dflags tr gr'
 
     return (env, gr'')
   where
     args = concatMap (splitOn ":") args'
+
+-------------------------------------------------------------------------------
+-- Parsed Action
+-------------------------------------------------------------------------------
+
+parsedAction
+    :: [Plugins.CommandLineOption]
+    -> Plugins.ModSummary
+    -> Plugins.HsParsedModule
+    -> Plugins.Hsc Plugins.HsParsedModule
+parsedAction args _modSum pm = do
+    let hsmodule = Plugins.hpm_module pm
+
+    dflags <- GHC.getDynFlags
+
+    debug $ show args
+    debug $ GHC.showPpr dflags hsmodule
+
+    _opts@Options {..} <- parseArgs dflags args
+
+    let transformNoOp :: a -> Rewrite a
+        transformNoOp _ = NoRewrite
+
+    trRebindApp <- case optRebindApp of
+        False -> return transformNoOp
+        True  -> return $ transformRebindableApplication
+
+    hsmodule' <- transformPs dflags trRebindApp hsmodule
+    let pm' = pm { Plugins.hpm_module = hsmodule' }
+
+    return pm'
 
 -------------------------------------------------------------------------------
 -- Args parsing
@@ -371,6 +407,8 @@ parseArgs dflags = foldM go0 defaultOptions where
     go opts "Categories" vns = do
         mvn <- oneName "Categories" vns
         return $ opts { optCategories = On $ fmap (\(VN x _) -> x) mvn }
+    go opts "RebindableApplication" _ =
+        return $ opts { optRebindApp = True }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
@@ -421,6 +459,7 @@ data Options = Options
     , optIdiomBrackets :: Bool
     , optDo            :: Bool
     , optCategories    :: OnOff String -- module name
+    , optRebindApp     :: Bool
     }
   deriving (Eq, Show)
 
@@ -439,6 +478,7 @@ defaultOptions = Options
     , optIdiomBrackets = False
     , optDo            = False
     , optCategories    = Off
+    , optRebindApp     = False
     }
 
 data StrSym
@@ -648,15 +688,29 @@ transformTypeSymbols Names {..} e@(L l (HsTyLit _ (HsStrTy _ _))) = do
 transformTypeSymbols _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
+-- RebindableApplication
+-------------------------------------------------------------------------------
+
+transformRebindableApplication :: LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs)
+transformRebindableApplication (L l (HsApp _ f@(L fl _) x@(L xl _)))
+    = Rewrite
+    $ L l $ HsPar noExtField
+    $ L l $ OpApp noExtField f (L l' (HsVar noExtField (L l' dollarName))) x
+  where
+    dollarName = GHC.Unqual $ GHC.mkVarOcc "$"
+    l' = GHC.mkSrcSpan (GHC.srcSpanEnd fl) (GHC.srcSpanStart xl)
+transformRebindableApplication _ = NoRewrite
+
+-------------------------------------------------------------------------------
 -- Transform
 -------------------------------------------------------------------------------
 
-transform
+transformRn
     :: GHC.DynFlags
     -> (LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn))
     -> HsGroup GhcRn
     -> GHC.TcM (HsGroup GhcRn)
-transform dflags f = SYB.everywhereM (SYB.mkM transform') where
+transformRn dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcRn -> GHC.TcM (LHsExpr GhcRn)
     transform' e@(L l _) = do
         -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
@@ -671,6 +725,26 @@ transform dflags f = SYB.everywhereM (SYB.mkM transform') where
         go (WithName kont) = do
             n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
             go (kont n)
+
+transformPs
+    :: GHC.DynFlags
+    -> (LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs))
+    -> Located (HsModule GhcPs)
+    -> Plugins.Hsc (Located (HsModule GhcPs))
+transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
+    transform' :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
+    transform' e@(L _l _) = do
+        -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
+        --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
+        go (f e)
+      where
+        go NoRewrite    = return e
+        go (Rewrite e') = return e'
+        go (Error err)  = do
+            liftIO $ err dflags
+            fail "Error in Overloaded plugin"
+        go (WithName _kont) = do
+            fail "Error in Overloaded plugin: WithName in Ps transform"
 
 transformType
     :: GHC.DynFlags

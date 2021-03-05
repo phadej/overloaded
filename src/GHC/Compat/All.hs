@@ -30,6 +30,7 @@ import Module     as X
 import Name       as X
 import Outputable as X
 import RdrName    as X
+import SrcLoc     as X
 import TcEnv      as X
 import TcEvidence as X
 import TcMType    as X
