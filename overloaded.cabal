@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               overloaded
-version:            0.2.1
+version:            0.3
 synopsis:           Overloaded pragmas as a plugin
 description:
   Implement @Overloaded@ pragmas as a source plugin
@@ -23,7 +23,7 @@ author:             Oleg Grenrus <oleg.grenrus@iki.fi>
 maintainer:         Oleg Grenrus <oleg.grenrus@iki.fi>
 category:           Plugin
 extra-source-files: CHANGELOG.md
-tested-with:        GHC ==8.6.5 || ==8.8.3 || ==8.10.1
+tested-with:        GHC ==8.6.5 || ==8.8.3 || ==8.10.4
 
 source-repository head
   type:     git
@@ -75,17 +75,17 @@ library
   -- other dependencies
   build-depends:
     , assoc            ^>=1.0.1
-    , bin              ^>=0.1
-    , fin              ^>=0.1
-    , profunctors      ^>=5.3
-    , ral              ^>=0.1
+    , bin              ^>=0.1.1
+    , fin              ^>=0.2
+    , profunctors      ^>=5.6
+    , ral              ^>=0.2
     , record-hasfield  ^>=1.0
     , semigroupoids    ^>=5.3.4
     , sop-core         ^>=0.5.0.0
     , split            ^>=0.2.3.3
     , syb              ^>=0.7.1
     , symbols          ^>=0.3.0.0
-    , vec              >=0.1.1.1 && <0.4
+    , vec              ^>=0.4
 
 test-suite example
   default-language: Haskell2010
@@ -158,7 +158,7 @@ test-suite example-boring
   -- test dependencies
   build-depends:
     , boring       ^>=0.1.3
-    , constraints  >=0.11.2  && <0.13
+    , constraints  ^>=0.13
     , HUnit        ^>=1.6.0.0
     , tasty
     , tasty-hunit
@@ -182,10 +182,10 @@ test-suite example-ad
   other-modules:    VectorSpace
   build-depends:
     , base
-    , constraints  ^>=0.12
+    , constraints  ^>=0.13
     , hmatrix      ^>=0.20.0.0
     , overloaded
-    , splitmix     ^>=0.0.4
+    , splitmix     ^>=0.1
 
 library optics-hasfield
   default-language: Haskell2010
@@ -249,9 +249,9 @@ test-suite test
   -- test dependencies
   build-depends:
     , generic-lens-lite  ^>=0.1
-    , lens               ^>=4.18 || ^>=4.19.1
+    , lens               ^>=5
     , QuickCheck         ^>=2.14
     , singleton-bool     ^>=0.1.5
-    , tasty              ^>=1.2.3
+    , tasty              ^>=1.4.1
     , tasty-hunit        ^>=0.10.0.2
     , tasty-quickcheck   ^>=0.10.1.1
