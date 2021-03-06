@@ -166,7 +166,6 @@ infixr 9 %%
 -- Monoidal
 -------------------------------------------------------------------------------
 
--- TODO
 class C.Category cat => SemigroupalCategory (cat :: k -> k -> Type) where
     type Tensor cat :: k -> k -> k
 

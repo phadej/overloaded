@@ -3,6 +3,7 @@
 -- | Overloaded plugin, which makes magic possible.
 module Overloaded.Plugin (plugin) where
 
+import Control.Exception      (throwIO)
 import Control.Monad          (foldM, when)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.List              (intercalate)
@@ -742,9 +743,10 @@ transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
         go (Rewrite e') = return e'
         go (Error err)  = do
             liftIO $ err dflags
-            fail "Error in Overloaded plugin"
+            -- Hsc doesn't have MonadFail instance
+            liftIO $ throwIO $ userError "Error in Overloaded plugin"
         go (WithName _kont) = do
-            fail "Error in Overloaded plugin: WithName in Ps transform"
+            liftIO $ throwIO $ userError "Error in Overloaded plugin: WithName in Ps transform"
 
 transformType
     :: GHC.DynFlags
