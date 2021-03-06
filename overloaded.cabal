@@ -23,7 +23,7 @@ author:             Oleg Grenrus <oleg.grenrus@iki.fi>
 maintainer:         Oleg Grenrus <oleg.grenrus@iki.fi>
 category:           Plugin
 extra-source-files: CHANGELOG.md
-tested-with:        GHC ==8.6.5 || ==8.8.3 || ==8.10.4
+tested-with:        GHC ==8.6.5 || ==8.8.3 || ==8.10.4 || ==9.0.1
 
 source-repository head
   type:     git
@@ -64,10 +64,10 @@ library
 
   -- GHC boot dependencies
   build-depends:
-    , base              ^>=4.12.0.0 || ^>=4.13.0.0 || ^>=4.14.0.0
+    , base              ^>=4.12.0.0 || ^>=4.13.0.0 || ^>=4.14.0.0 || ^>=4.15.0.0
     , bytestring        ^>=0.10.8.2
     , containers        ^>=0.6.0.1
-    , ghc               ^>=8.6 || ^>=8.8 || ^>=8.10
+    , ghc               ^>=8.6 || ^>=8.8 || ^>=8.10 || ^>=9.0
     , template-haskell
     , text              ^>=1.2.3.0
     , time              ^>=1.8.0.2 || ^>=1.9.3
@@ -188,6 +188,9 @@ test-suite example-ad
     , overloaded
     , splitmix     ^>=0.1
 
+  if impl(ghc >=9.0)
+    buildable: False
+
 library optics-hasfield
   default-language: Haskell2010
   hs-source-dirs:   optics-hasfield
@@ -244,6 +247,7 @@ test-suite test
     , symbols
     , template-haskell
     , text
+    , th-compat
     , time
     , vec
 

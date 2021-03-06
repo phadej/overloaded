@@ -79,14 +79,23 @@ import GHC.Hs
 import HsSyn
 #endif
 
-#if MIN_VERSION_ghc(8,8,0)
+#if MIN_VERSION_ghc(9,0,0)
+import GHC.Types.Basic (PromotionFlag (..))
+#elif MIN_VERSION_ghc(8,8,0)
 import BasicTypes (PromotionFlag (..))
 #endif
 
-import Data.List (foldl')
+#if MIN_VERSION_ghc(9,0,0)
+import GHC.Types.SrcLoc
+       (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
+       srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
+#else
 import SrcLoc
        (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
        srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
+#endif
+
+import Data.List (foldl')
 
 import qualified GHC.Compat.All as GHC
 
