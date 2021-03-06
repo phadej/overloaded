@@ -85,6 +85,7 @@ library
     , split            ^>=0.2.3.3
     , syb              ^>=0.7.1
     , symbols          ^>=0.3.0.0
+    , th-compat        ^>=0.1.1
     , vec              ^>=0.4
 
 test-suite example

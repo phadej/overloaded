@@ -68,6 +68,9 @@ import Overloaded.Plugin.V
 -- * @TypeNats@ and @TypeSymbols@ desugar type-level literals into @'Overloaded.TypeNats.FromNat'@ and @'Overloaded.TypeSymbols.FromTypeSymbol'@ respectively
 -- * @Do@ desugar in /Local Do/ fashion. See examples.
 -- * @Categories@ change @Arrows@ desugaring to use /"correct"/ category classes.
+-- * @CodeLabels@ desugars @OverloadedLabels@ into Typed Template Haskell splices
+-- * @CodeStrings@ desugars string literals into Typed Template Haskell splices
+-- * @RebindableApplication@ changes how juxtaposition is interpreted
 --
 -- == Known limitations
 --
@@ -135,6 +138,22 @@ import Overloaded.Plugin.V
 -- instance Traversable Tree where
 --     'traverse' f (Leaf x)     = [| Leaf (f x) |]
 --     'traverse' f (Branch l r) = [| Branch ('traverse' f l) ('traverse' f r) |]
+-- @
+--
+-- == RebindableApplication
+--
+-- Converts all @f x@ applications into @(f $ x)@ with whatever @$@
+-- is in scope.
+--
+-- @
+-- {-\# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:RebindableApplication #-}
+--
+-- let f = pure ((+) :: Int -> Int -> Int)
+--     x = Just 1
+--     y = Just 2
+-- 
+--     z = let ($) = ('<*>') in f x y
+-- in z
 -- @
 --
 plugin :: Plugins.Plugin
@@ -308,14 +327,18 @@ parsedAction args _modSum pm = do
     debug $ show args
     debug $ GHC.showPpr dflags hsmodule
 
+    let names = defaultRdrNames
     _opts@Options {..} <- parseArgs dflags args
 
     let transformNoOp :: a -> Rewrite a
         transformNoOp _ = NoRewrite
 
     trRebindApp <- case optRebindApp of
-        False -> return transformNoOp
-        True  -> return $ transformRebindableApplication
+        Off -> return transformNoOp
+        On Nothing  -> return $ transformRebindableApplication names
+        On (Just rn) -> do
+            let n = mkRdrName rn
+            return $ transformRebindableApplication $ names { dollarName = n }
 
     hsmodule' <- transformPs dflags trRebindApp hsmodule
     let pm' = pm { Plugins.hpm_module = hsmodule' }
@@ -408,8 +431,9 @@ parseArgs dflags = foldM go0 defaultOptions where
     go opts "Categories" vns = do
         mvn <- oneName "Categories" vns
         return $ opts { optCategories = On $ fmap (\(VN x _) -> x) mvn }
-    go opts "RebindableApplication" _ =
-        return $ opts { optRebindApp = True }
+    go opts "RebindableApplication" vns = do
+        mrn <- oneName "RebindableApplication" vns
+        return $ opts { optRebindApp = On mrn }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
@@ -460,7 +484,7 @@ data Options = Options
     , optIdiomBrackets :: Bool
     , optDo            :: Bool
     , optCategories    :: OnOff String -- module name
-    , optRebindApp     :: Bool
+    , optRebindApp     :: OnOff VarName
     }
   deriving (Eq, Show)
 
@@ -479,7 +503,7 @@ defaultOptions = Options
     , optIdiomBrackets = False
     , optDo            = False
     , optCategories    = Off
-    , optRebindApp     = False
+    , optRebindApp     = Off
     }
 
 data StrSym
@@ -692,15 +716,14 @@ transformTypeSymbols _ _ = NoRewrite
 -- RebindableApplication
 -------------------------------------------------------------------------------
 
-transformRebindableApplication :: LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs)
-transformRebindableApplication (L l (HsApp _ f@(L fl _) x@(L xl _)))
+transformRebindableApplication :: RdrNames -> LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs)
+transformRebindableApplication RdrNames {..} (L l (HsApp _ f@(L fl _) x@(L xl _)))
     = Rewrite
     $ L l $ HsPar noExtField
     $ L l $ OpApp noExtField f (L l' (HsVar noExtField (L l' dollarName))) x
   where
-    dollarName = GHC.Unqual $ GHC.mkVarOcc "$"
     l' = GHC.mkSrcSpan (GHC.srcSpanEnd fl) (GHC.srcSpanStart xl)
-transformRebindableApplication _ = NoRewrite
+transformRebindableApplication _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- Transform
