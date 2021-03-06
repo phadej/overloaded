@@ -4,6 +4,8 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Regexp.Type (
     Parse,
     Matches,

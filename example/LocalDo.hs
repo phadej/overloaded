@@ -10,10 +10,12 @@
 {-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Do #-}
 module Main (main) where
 
-import Data.Kind (Type)
+import Control.Applicative ((<|>))
+import Data.Kind           (Type)
+import Data.Maybe          (fromMaybe)
+import System.Timeout      (timeout)
+
 import Overloaded
-import System.Timeout (timeout)
-import Data.Maybe (fromMaybe)
 
 -- Idea / example by Vladislav Zavialov (int-inded) from:
 -- https://github.com/ghc-proposals/ghc-proposals/pull/216#issuecomment-614771416
@@ -21,8 +23,8 @@ import Data.Maybe (fromMaybe)
 main :: IO ()
 main = do
     putStrLn "Enter string, you have 10 seconds..."
-    str <- fromMaybe "timed out..." <$> timeout 10000000 getLine
-    let customIO :: forall (method :: DoMethod) ty. CustomIO method ty => ty 
+    str <- fromMaybe "timed out..." <$> timeout 10000000 (getLine <|> return "")
+    let customIO :: forall (method :: DoMethod) ty. CustomIO method ty => ty
         customIO = makeCustomIO @method @ty str
     customIO.do
         putStrLn "Hello"
