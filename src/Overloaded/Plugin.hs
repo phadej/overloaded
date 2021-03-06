@@ -68,6 +68,8 @@ import Overloaded.Plugin.V
 -- * @TypeNats@ and @TypeSymbols@ desugar type-level literals into @'Overloaded.TypeNats.FromNat'@ and @'Overloaded.TypeSymbols.FromTypeSymbol'@ respectively
 -- * @Do@ desugar in /Local Do/ fashion. See examples.
 -- * @Categories@ change @Arrows@ desugaring to use /"correct"/ category classes.
+-- * @CodeLabels@ desugars @OverloadedLabels@ into Typed Template Haskell splices
+-- * @CodeStrings@ desugars string literals into Typed Template Haskell splices
 -- * @RebindableApplication@ changes how juxtaposition is interpreted
 --
 -- == Known limitations
