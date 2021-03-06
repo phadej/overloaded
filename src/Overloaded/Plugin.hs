@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Overloaded plugin, which makes magic possible.
@@ -15,7 +16,12 @@ import qualified Data.Generics as SYB
 -- GHC stuff
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
+
+#if MIN_VERSION_ghc(9,0,0)
+import qualified GHC.Plugins     as Plugins
+#else
 import qualified GhcPlugins      as Plugins
+#endif
 
 import Overloaded.Plugin.Categories
 import Overloaded.Plugin.Diagnostics
@@ -587,7 +593,7 @@ transformSymbols _ _ = NoRewrite
 transformCodeStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformCodeStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) = do
     let inner = hsApps l (hsVar l codeFromStringName) [e]
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField HasParens n inner
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
 
 transformCodeStrings _ _ = NoRewrite
 
@@ -648,7 +654,11 @@ transformLists _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformIf :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+#if MIN_VERSION_ghc(9,0,0)
+transformIf Names {..} (L l (HsIf _ co th el)) = Rewrite val4 where
+#else
 transformIf Names {..} (L l (HsIf _ _ co th el)) = Rewrite val4 where
+#endif
     val4 = L l $ HsApp noExtField val3 el
     val3 = L l $ HsApp noExtField val2 th
     val2 = L l $ HsApp noExtField val1 co
@@ -671,12 +681,19 @@ transformLabels _ _ = NoRewrite
 -- OverloadedCodeLabels
 -------------------------------------------------------------------------------
 
+hasParens :: SpliceDecoration
+#if MIN_VERSION_ghc(9,0,0)
+hasParens = DollarSplice
+#else
+hasParens = HasParens
+#endif
+
 transformCodeLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformCodeLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
     let name' = hsVar l codeFromLabelName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     -- Rewrite $ L l $ HsRnBracketOut noExtField (ExpBr noExtField inner) []
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField HasParens n inner
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
 
 transformCodeLabels _ _ = NoRewrite
 
@@ -753,8 +770,13 @@ transformRn dflags f = SYB.everywhereM (SYB.mkM transform') where
 transformPs
     :: GHC.DynFlags
     -> (LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs))
+#if MIN_VERSION_ghc(9,0,0)
+    -> Located HsModule
+    -> Plugins.Hsc (Located HsModule)
+#else
     -> Located (HsModule GhcPs)
     -> Plugins.Hsc (Located (HsModule GhcPs))
+#endif
 transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
     transform' e@(L _l _) = do

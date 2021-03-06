@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
 module Overloaded.Plugin.HasField where
 
@@ -7,8 +8,14 @@ import Data.Maybe    (mapMaybe)
 
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
-import qualified TcPluginM       as Plugins
 
+#if MIN_VERSION_ghc(9,0,0)
+import qualified GHC.Tc.Plugin as Plugins
+#else
+import qualified TcPluginM as Plugins
+#endif
+
+import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.Names
 import Overloaded.Plugin.V
 
@@ -31,7 +38,7 @@ tcPluginInit = do
         GHC.Found _ md -> Plugins.tcLookupClass =<< Plugins.lookupOrig md (GHC.mkTcOcc "HasField")
         _              -> do
             dflags <- GHC.unsafeTcPluginTcM GHC.getDynFlags
-            Plugins.tcPluginIO $ GHC.putLogMsg dflags GHC.NoReason GHC.SevError noSrcSpan (GHC.defaultErrStyle dflags) $
+            Plugins.tcPluginIO $ putError dflags noSrcSpan  $
                 GHC.text "Cannot find module" GHC.<+> GHC.ppr ghcRecordsCompatMN
             fail "panic!"
 
@@ -82,7 +89,7 @@ tcPluginSolve PluginCtx {..} _ _ wanteds = do
             let t' = s'
 
             bName <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc "b")
-            let bBndr   = GHC.mkLocalId bName $ xs !! idx
+            let bBndr   = GHC.mkLocalMultId bName $ xs !! idx
 
             -- (\b -> DC b x1 x2, x0)
             let rhs = GHC.mkConApp (GHC.tupleDataCon GHC.Boxed 2)
@@ -111,7 +118,7 @@ tcPluginSolve PluginCtx {..} _ _ wanteds = do
 
             -- \s -> case s of DC x0 x1 x2 -> (\b -> DC b x1 x2, x0)
             sName <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc "s")
-            let sBndr   = GHC.mkLocalId sName s'
+            let sBndr  = GHC.mkLocalMultId sName s'
             let expr   = GHC.mkCoreLams [sBndr] $ GHC.Case (GHC.Var sBndr) sBndr caseType [caseBranch]
             let evterm = makeEvidence4 hasPolyFieldCls expr tys
 
@@ -139,7 +146,7 @@ replace n y (x:xs) = x : replace (pred n) y xs
 makeVar :: String -> GHC.Type -> GHC.TcPluginM GHC.Var
 makeVar n ty = do
     name <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc n)
-    return (GHC.mkLocalId name ty)
+    return (GHC.mkLocalMultId name ty)
 
 -------------------------------------------------------------------------------
 -- Simple Ct operations

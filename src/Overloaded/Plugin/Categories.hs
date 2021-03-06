@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP                #-}
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE DeriveFunctor      #-}
 {-# LANGUAGE GADTs              #-}
@@ -17,7 +17,12 @@ import qualified Data.Generics   as SYB
 import qualified Data.Map.Strict as Map
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
+
+#if MIN_VERSION_ghc(9,0,0)
+import qualified GHC.Plugins     as Plugins
+#else
 import qualified GhcPlugins      as Plugins
+#endif
 
 import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.Names
@@ -132,7 +137,11 @@ parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsHigherOrderApp _)) = do
     return $ Last (Left morp') expr'
 parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
     case mg_alts matchGroup of
-#if MIN_VERSION_ghc(8,8,0) && !MIN_VERSION_ghc(8,10,1)
+#if MIN_VERSION_ghc(9,0,1)
+        L _ [ L _ Match { m_pats = [L _ (ConPat _ (L _ acon) aargs)], m_grhss = abody' }
+            , L _ Match { m_pats = [L _ (ConPat _ (L _ bcon) bargs)], m_grhss = bbody' }
+            ]
+#elif MIN_VERSION_ghc(8,8,0) && !MIN_VERSION_ghc(8,10,1)
         L _ [ L _ Match { m_pats = [XPat (L _ (ConPatIn (L _ acon) aargs))], m_grhss = abody' }
             , L _ Match { m_pats = [XPat (L _ (ConPatIn (L _ bcon) bargs))], m_grhss = bbody' }
             ]
@@ -197,7 +206,11 @@ parseStmts
     -> SrcSpan
     -> [CmdLStmt GhcRn]
     -> Rewrite (Continuation (LHsExpr GhcRn) (Var b a))
+#if MIN_VERSION_ghc(9,0,1)
+parseStmts names ctx _ (L l (BindStmt _ pat body) : next) = do
+#else
 parseStmts names ctx _ (L l (BindStmt _ pat body _ _) : next) = do
+#endif
     SomePattern pat' <- parsePat pat
     cont1 <- parseCmd names ctx body
     cont2 <- parseStmts names (combineMaps ctx pat') l next
