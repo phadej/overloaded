@@ -6,10 +6,15 @@ module Overloaded.Plugin.Names (
     -- * CatNames
     CatNames (..),
     getCatNames,
+    -- * RrdNames
+    RdrNames (..),
+    defaultRdrNames,
     -- * VarName
     VarName (..),
     lookupVarName,
     lookupTypeName,
+    -- * RdrName
+    mkRdrName,
     -- * Selected modules
     ghcRecordsCompatMN,
     ) where
@@ -48,6 +53,10 @@ data Names = Names
     , codeFromLabelName  :: GHC.Name
     , codeFromStringName :: GHC.Name
     , catNames           :: CatNames
+    }
+
+data RdrNames = RdrNames
+    { dollarName         :: GHC.RdrName
     }
 
 data CatNames = CatNames
@@ -102,6 +111,11 @@ getNames dflags env = do
 
     return Names {..}
 
+defaultRdrNames :: RdrNames
+defaultRdrNames = RdrNames
+    { dollarName = GHC.Unqual $ GHC.mkVarOcc "$"
+    }
+
 getCatNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> GHC.TcM CatNames
 getCatNames dflags env module_ = do
     catIdentityName <- lookupName dflags env module_ "identity"
@@ -154,6 +168,10 @@ lookupVarName dflags env (VN vn mn) = lookupName dflags env (GHC.mkModuleName vn
 
 lookupTypeName :: GHC.DynFlags -> GHC.HscEnv -> VarName -> GHC.TcM GHC.Name
 lookupTypeName dflags env (VN vn mn) = lookupName' dflags env (GHC.mkModuleName vn) mn
+
+-- TODO: ignores module
+mkRdrName :: VarName -> GHC.RdrName
+mkRdrName (VN _ rn) = GHC.Unqual $ GHC.mkVarOcc rn
 
 -------------------------------------------------------------------------------
 -- ModuleNames

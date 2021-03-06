@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS -fplugin=Overloaded
-            -fplugin-opt=Overloaded:RebindableApplication #-}
+            -fplugin-opt=Overloaded:RebindableApplication=$ #-}
 module Overloaded.Test.RebindableApplications where
 
 import Data.Char        (toUpper)
