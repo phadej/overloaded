@@ -1,3 +1,10 @@
+# 0.3
+
+- Add `Overloaded:RebindableApplications`
+- Add `Overloaded:CodeLabels` and `Overloaded:CodeStrings`
+  (they don't work well though due how Typed Template Haskell is type-checked).
+- Change class hierarcy in `Overloaded.Category`
+
 # 0.2.1
 
 - Add `Overloaded:Categories`, which makes `Arrows` notation desugar to

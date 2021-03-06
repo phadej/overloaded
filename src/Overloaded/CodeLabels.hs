@@ -14,5 +14,7 @@ import Language.Haskell.TH.Syntax.Compat (SpliceQ)
 -- @
 -- {-\# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:CodeLabels #-}
 -- @
+--
+-- This feature is not very usable, see https://gitlab.haskell.org/ghc/ghc/-/issues/18211
 class IsCodeLabel (sym :: Symbol) a where
     codeFromLabel :: SpliceQ a

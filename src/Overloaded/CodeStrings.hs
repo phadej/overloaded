@@ -18,6 +18,8 @@ import qualified Data.ByteString as BS
 -- @
 -- {-\# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:CodeLabels #-}
 -- @
+--
+-- This feature is not very usable, see https://gitlab.haskell.org/ghc/ghc/-/issues/18211
 class IsCodeString a where
     codeFromString :: String -> SpliceQ a
 
