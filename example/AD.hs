@@ -56,17 +56,15 @@ ladd :: LinMap r (a, a) -> LinMap r a
 ladd (LH f g) = LA f g
 ladd (LV f g) = LV (ladd f) (ladd g)
 ladd (LA a b) = LA (ladd a) (ladd b)
-ladd (LK k f) = LK k (ladd f)
 ladd LZ       = LZ
-ladd LI       = LV LI LI
+ladd (LD k)   = LV (LD k) (LD k)
 
 lmult :: Double -> Double -> LinMap r (a, a) -> LinMap r a
-lmult x y (LH f g) = LA (LK y f) (LK x g)
+lmult x y (LH f g) = LA (lmul y f) (lmul x g)
 lmult x y (LV f g) = LV (lmult x y f) (lmult x y g)
 lmult x y (LA f g) = LA (lmult x y f) (lmult x y g)
-lmult x y (LK k f) = LK k (lmult x y f)
 lmult _ _ LZ       = LZ
-lmult x y LI       = LV (LK y LI) (LK x LI)
+lmult x y (LD k)   = LV (LD (k * y)) (LD (k * x))
 
 plus :: AD (Double, Double) Double
 plus = AD $ \(x,y) -> (x + y, L ladd)

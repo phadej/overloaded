@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -11,7 +12,8 @@
 {-# OPTIONS_GHC -Wall #-}
 -- | This module is wrongly named.
 module VectorSpace (
-    LinMap (..),
+    LinMap (.., LI),
+    lmul,
     HasDim(Dim, dimDict),
     toRawMatrix,
     evalL,
@@ -22,12 +24,12 @@ module VectorSpace (
     fromVector,
 ) where
 
-import Data.Constraint       ((:-), Dict (..), withDict)
+import Data.Constraint       (Dict (..), withDict, (:-))
 import Data.Proxy            (Proxy (..))
 import GHC.TypeLits
 import Overloaded.Categories
 
-import qualified Control.Category
+import qualified Control.Category      as C
 import qualified Data.Constraint.Nat   as C
 import qualified Numeric.LinearAlgebra as L
 
@@ -35,22 +37,28 @@ import qualified Numeric.LinearAlgebra as L
 
 data LinMap a b where
     LZ :: LinMap a b
-    LI :: LinMap a a
+    LD :: Double -> LinMap a a
     LH :: LinMap a b -> LinMap a c -> LinMap a (b, c)
     LV :: LinMap a c -> LinMap b c -> LinMap (a, b) c
     LA :: LinMap a b -> LinMap a b -> LinMap a b
-    LK :: Double -> LinMap a b -> LinMap a b
 
 deriving instance Show (LinMap a b)
+
+pattern LI :: forall a b. () => (b ~ a) => LinMap a b
+pattern LI = LD 1
+
+lmul :: Double -> LinMap a b -> LinMap a b
+lmul _ LZ       = LZ
+lmul k (LD x)   = LD (k * x)
+lmul k (LH f g) = LH (lmul k f) (lmul k g)
+lmul k (LV f g) = LV (lmul k f) (lmul k g)
+lmul k (LA f g) = LA (lmul k f) (lmul k g)
 
 lcomp :: LinMap b c -> LinMap a b -> LinMap a c
 lcomp LZ       _        = LZ
 lcomp _        LZ       = LZ
-lcomp LI       h        = h
-lcomp h        LI       = h
-lcomp (LK k f) (LK l g) = LK (k * l) (lcomp f g)
-lcomp (LK k f) h        = LK k (lcomp f h)
-lcomp f        (LK k h) = LK k (lcomp f h)
+lcomp (LD k)   h        = lmul k h
+lcomp h        (LD k)   = lmul k h
 lcomp (LA f g) h        = LA (lcomp f h) (lcomp g h)
 lcomp f        (LA g h) = LA (lcomp f g) (lcomp f h)
 lcomp (LH f g) h        = LH (lcomp f h) (lcomp g h)
@@ -58,7 +66,7 @@ lcomp h        (LV f g) = LV (lcomp h f) (lcomp h g)
 lcomp (LV f g) (LH u v) = LA (lcomp f u) (lcomp g v)
 
 instance Category LinMap where
-    id = LI
+    id  = LI
     (.) = lcomp
 
 instance CategoryWith1 LinMap where
@@ -67,8 +75,8 @@ instance CategoryWith1 LinMap where
 
 instance CartesianCategory LinMap where
     type Product LinMap = (,)
-    proj1  = LV LI LZ
-    proj2  = LV LZ LI
+    proj1  = LV C.id LZ
+    proj2  = LV LZ C.id
     fanout = LH
 
 instance CategoryWith0 LinMap where
@@ -77,8 +85,8 @@ instance CategoryWith0 LinMap where
 
 instance CocartesianCategory LinMap where
     type Coproduct LinMap = (,)
-    inl   = LH LI LZ
-    inr   = LH LZ LI
+    inl   = LH C.id LZ
+    inr   = LH LZ C.id
     fanin = LV
 
 instance BicartesianCategory LinMap where
@@ -90,25 +98,23 @@ newtype L a b = L (forall r. LinMap r a -> LinMap r b)
 
 lfst :: LinMap a (b, c) -> LinMap a b
 lfst (LA f g) = LA (lfst f) (lfst g)
-lfst (LK k f) = LK k (lfst f)
 lfst (LH f _) = f
 lfst (LV f g) = LV (lfst f) (lfst g)
 lfst LZ       = LZ
-lfst LI       = LV LI LZ
+lfst (LD k)   = LV (LD k) LZ
 
 lsnd :: LinMap a (b, c) -> LinMap a c
 lsnd (LH _ g) = g
 lsnd (LA f g) = LA (lsnd f) (lsnd g)
-lsnd (LK k f) = LK k (lsnd f)
 lsnd (LV f g) = LV (lsnd f) (lsnd g)
 lsnd LZ       = LZ
-lsnd LI       = LV LZ LI
+lsnd (LD k)   = LV LZ (LD k)
 
 linitial :: LinMap r () -> LinMap r a
 linitial _ = LZ
 
 linear :: Double -> L a a
-linear k = L $ LK k
+linear k = L $ lmul k
 
 -- lmult :: Double -> Double -> LinMap r (a, a) -> LinMap r a
 -- lmult x y (LH f g) = LA (LK y f) (LK x g)
@@ -185,9 +191,8 @@ dim p = withDimDict p $ fromInteger $ natVal (Proxy :: Proxy (Dim a))
 
 toRawMatrix :: forall a b. (HasDim a, HasDim b) => LinMap a b -> L.Matrix Double
 toRawMatrix LZ       = (dim (Proxy :: Proxy a) L.>< dim (Proxy :: Proxy b)) (repeat 0)
-toRawMatrix LI       = L.ident (dim (Proxy :: Proxy a))
+toRawMatrix (LD k)   = L.scale k (L.ident (dim (Proxy :: Proxy a)))
 toRawMatrix (LA f g) = L.add (toRawMatrix f) (toRawMatrix g)
-toRawMatrix (LK k f) = L.scale k (toRawMatrix f)
 toRawMatrix (LH f g) = go splitPair f g where
     go :: (Dict (HasDim x), Dict (HasDim y)) -> LinMap a x -> LinMap a y -> L.Matrix Double
     go (Dict, Dict) f' g' = toRawMatrix f' L.||| toRawMatrix g'
@@ -196,7 +201,7 @@ toRawMatrix (LV f g) = go splitPair f g where
     go (Dict, Dict) f' g' = toRawMatrix f' L.=== toRawMatrix g'
 
 evalL :: (HasDim a, HasDim b) => L a b -> L.Matrix Double
-evalL (L f) = toRawMatrix (f LI)
+evalL (L f) = toRawMatrix (f (LD 1))
 
 -- toStaticMatrix :: forall a b. (HasDim a, HasDim b) => LinMap a b -> LS.L (Dim a) (Dim b)
 -- toStaticMatrix LZ =
