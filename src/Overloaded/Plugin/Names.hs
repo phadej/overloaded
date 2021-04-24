@@ -8,7 +8,7 @@ module Overloaded.Plugin.Names (
     getCatNames,
     -- * RrdNames
     RdrNames (..),
-    defaultRdrNames,
+    getRdrNames,
     -- * VarName
     VarName (..),
     lookupVarName,
@@ -17,6 +17,7 @@ module Overloaded.Plugin.Names (
     mkRdrName,
     -- * Selected modules
     ghcRecordsCompatMN,
+    overloadedConstructorsMN,
     ) where
 
 import Control.Monad.IO.Class (MonadIO (..))
@@ -57,6 +58,7 @@ data Names = Names
 
 data RdrNames = RdrNames
     { dollarName         :: GHC.RdrName
+    , buildName          :: GHC.RdrName
     }
 
 data CatNames = CatNames
@@ -107,14 +109,17 @@ getNames dflags env = do
     codeFromLabelName  <- lookupName dflags env overloadedCodeLabelsMN  "codeFromLabel"
     codeFromStringName <- lookupName dflags env overloadedCodeStringsMN "codeFromString"
 
+
     catNames <- getCatNames dflags env overloadedCategoriesMN
 
     return Names {..}
 
-defaultRdrNames :: RdrNames
-defaultRdrNames = RdrNames
-    { dollarName = GHC.Unqual $ GHC.mkVarOcc "$"
-    }
+getRdrNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.Hsc RdrNames
+getRdrNames dflags env = do
+    let dollarName = GHC.Exact GHC.dollarName
+    buildName <- GHC.Exact <$> lookupName dflags env overloadedConstructorsMN "build"
+
+    return RdrNames {..}
 
 getCatNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> GHC.TcM CatNames
 getCatNames dflags env module_ = do
@@ -132,11 +137,11 @@ getCatNames dflags env module_ = do
 
     return CatNames {..}
 
-lookupName :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
-lookupName dflags env mn vn = do
-    res <-  liftIO $ GHC.findImportedModule env mn Nothing
+lookupName :: MonadIO m => GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> m GHC.Name
+lookupName dflags env mn vn = liftIO $ do
+    res <- GHC.findImportedModule env mn Nothing
     case res of
-        GHC.Found _ md -> GHC.lookupOrig md (GHC.mkVarOcc vn)
+        GHC.Found _ md -> GHC.lookupOrigIO env md (GHC.mkVarOcc vn)
         _              -> do
             putError dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             fail "panic!"
@@ -218,6 +223,9 @@ overloadedTypeNatsMN =  GHC.mkModuleName "Overloaded.TypeNats"
 
 overloadedTypeSymbolsMN :: GHC.ModuleName
 overloadedTypeSymbolsMN =  GHC.mkModuleName "Overloaded.TypeSymbols"
+
+overloadedConstructorsMN :: GHC.ModuleName
+overloadedConstructorsMN =  GHC.mkModuleName "Overloaded.Constructors"
 
 ghcRecordsCompatMN :: GHC.ModuleName
 ghcRecordsCompatMN =  GHC.mkModuleName "GHC.Records.Compat"

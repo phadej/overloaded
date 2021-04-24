@@ -2,12 +2,11 @@
 {-# LANGUAGE RecordWildCards #-}
 module Overloaded.Plugin.HasField where
 
-import Control.Monad (forM, guard, unless)
+import Control.Monad (forM, unless)
 import Data.List     (elemIndex)
 import Data.Maybe    (mapMaybe)
 
 import qualified GHC.Compat.All  as GHC
-import           GHC.Compat.Expr
 
 #if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Tc.Plugin as Plugins
@@ -15,46 +14,20 @@ import qualified GHC.Tc.Plugin as Plugins
 import qualified TcPluginM as Plugins
 #endif
 
-import Overloaded.Plugin.Diagnostics
-import Overloaded.Plugin.Names
 import Overloaded.Plugin.V
-
-newtype PluginCtx = PluginCtx
-    { hasPolyFieldCls :: GHC.Class
-    }
-
-tcPlugin :: GHC.TcPlugin
-tcPlugin = GHC.TcPlugin
-    { GHC.tcPluginInit  = tcPluginInit
-    , GHC.tcPluginSolve = tcPluginSolve
-    , GHC.tcPluginStop  = const (return ())
-    }
-
-tcPluginInit :: GHC.TcPluginM PluginCtx
-tcPluginInit = do
-    -- TODO: don't fail
-    res <- Plugins.findImportedModule ghcRecordsCompatMN Nothing
-    cls <- case res of
-        GHC.Found _ md -> Plugins.tcLookupClass =<< Plugins.lookupOrig md (GHC.mkTcOcc "HasField")
-        _              -> do
-            dflags <- GHC.unsafeTcPluginTcM GHC.getDynFlags
-            Plugins.tcPluginIO $ putError dflags noSrcSpan  $
-                GHC.text "Cannot find module" GHC.<+> GHC.ppr ghcRecordsCompatMN
-            fail "panic!"
-
-    return PluginCtx
-        { hasPolyFieldCls = cls
-        }
+import Overloaded.Plugin.TcPlugin.Ctx
+import Overloaded.Plugin.TcPlugin.Utils
 
 -- HasPolyField "petName" Pet Pet [Char] [Char]
-tcPluginSolve :: PluginCtx -> GHC.TcPluginSolver
-tcPluginSolve PluginCtx {..} _ _ wanteds = do
-    -- acquire context
-    dflags      <- Plugins.unsafeTcPluginTcM GHC.getDynFlags
-    famInstEnvs <- Plugins.getFamInstEnvs
-    rdrEnv      <- Plugins.unsafeTcPluginTcM GHC.getGlobalRdrEnv
-
-    solved <- forM wantedsHasPolyField $ \(ct, tys@(V4 _k _name _s a)) -> do
+solveHasField
+    :: PluginCtx
+    -> GHC.DynFlags
+    -> (GHC.FamInstEnv, GHC.FamInstEnv)
+    -> GHC.GlobalRdrEnv
+    -> [GHC.Ct]
+    -> Plugins.TcPluginM [(Maybe (GHC.EvTerm, [GHC.Ct]), GHC.Ct)]
+solveHasField PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
+    forM wantedsHasPolyField $ \(ct, tys@(V4 _k _name _s a)) -> do
         -- GHC.tcPluginIO $ warn dflags noSrcSpan $
         --     GHC.text "wanted" GHC.<+> GHC.ppr ct
 
@@ -88,8 +61,7 @@ tcPluginSolve PluginCtx {..} _ _ wanteds = do
             let b' = a'
             let t' = s'
 
-            bName <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc "b")
-            let bBndr   = GHC.mkLocalMultId bName $ xs !! idx
+            bBndr <- makeVar "b" (xs !! idx)
 
             -- (\b -> DC b x1 x2, x0)
             let rhs = GHC.mkConApp (GHC.tupleDataCon GHC.Boxed 2)
@@ -120,56 +92,20 @@ tcPluginSolve PluginCtx {..} _ _ wanteds = do
             sName <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc "s")
             let sBndr  = GHC.mkLocalMultId sName s'
             let expr   = GHC.mkCoreLams [sBndr] $ GHC.Case (GHC.Var sBndr) sBndr caseType [caseBranch]
-            let evterm = makeEvidence4 hasPolyFieldCls expr tys
+            let evterm = makeEvidence4_1 hasPolyFieldCls expr tys
 
             -- wanteds
             ctEvidence <- Plugins.newWanted ctloc $ GHC.mkPrimEqPred a a'
 
             return (evterm, [ GHC.mkNonCanonical ctEvidence -- a ~ a'
                             ])
-
-    return $ GHC.TcPluginOk (mapMaybe extractA solved) (concat $ mapMaybe extractB solved)
   where
     wantedsHasPolyField = mapMaybe (findClassConstraint4 hasPolyFieldCls) wanteds
-
-    extractA (Nothing, _)     = Nothing
-    extractA (Just (a, _), b) = Just (a, b)
-
-    extractB (Nothing, _)      = Nothing
-    extractB (Just (_, ct), _) = Just ct
 
 replace :: Int -> a -> [a] -> [a]
 replace _ _ []     = []
 replace 0 y (_:xs) = y:xs
 replace n y (x:xs) = x : replace (pred n) y xs
-
-makeVar :: String -> GHC.Type -> GHC.TcPluginM GHC.Var
-makeVar n ty = do
-    name <- GHC.unsafeTcPluginTcM $ GHC.newName (GHC.mkVarOcc n)
-    return (GHC.mkLocalMultId name ty)
-
--------------------------------------------------------------------------------
--- Simple Ct operations
--------------------------------------------------------------------------------
-
-findClassConstraint4 :: GHC.Class -> GHC.Ct -> Maybe (GHC.Ct, V4 GHC.Type)
-findClassConstraint4 cls ct = do
-   (cls', [k, x, s, a]) <- GHC.getClassPredTys_maybe (GHC.ctPred ct)
-   guard (cls' == cls)
-   return (ct, V4 k x s a)
-
--- | Make newtype class evidence
-makeEvidence4 :: GHC.Class -> GHC.CoreExpr -> V4 GHC.Type -> GHC.EvTerm
-makeEvidence4 cls e (V4 k x s a) = GHC.EvExpr appDc where
-    tyCon = GHC.classTyCon cls
-    dc    = GHC.tyConSingleDataCon tyCon
-    appDc = GHC.mkCoreConApps dc
-        [ GHC.Type k
-        , GHC.Type x
-        , GHC.Type s
-        , GHC.Type a
-        , e
-        ]
 
 -------------------------------------------------------------------------------
 -- Adopted from GHC
@@ -206,10 +142,3 @@ matchHasField _dflags famInstEnvs rdrEnv (V4 _k x s _a)
         else return Nothing
 
 matchHasField _ _ _ _ = return Nothing
-
--------------------------------------------------------------------------------
--- Utils
--------------------------------------------------------------------------------
-
-fstOf3 :: (a, b, c) -> a
-fstOf3 (a, _, _) =  a

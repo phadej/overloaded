@@ -10,7 +10,7 @@ import Test.Tasty       (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 
 tests :: TestTree
-tests = testGroup "Strings"
+tests = testGroup "RecordFields"
     [ testCase "view" $
         view #petName bob @?= "bob"
     , testCase "over" $

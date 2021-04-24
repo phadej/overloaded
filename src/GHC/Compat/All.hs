@@ -7,6 +7,7 @@ mkLocalMultId,
 ) where
 
 #if MIN_VERSION_ghc(9,0,0)
+import GHC.Builtin.Names        as X
 import GHC.Builtin.Types        as X
 import GHC.Core                 as X
 import GHC.Core.Class           as X
@@ -39,6 +40,8 @@ import GHC.Unit.Module.Name     as X
 import GHC.Utils.Error          as X
 import GHC.Utils.Outputable     as X
 
+import GHC     as X (Module)
+
 import qualified GHC.Core.TyCo.Rep as GHC
 
 #else
@@ -59,13 +62,14 @@ import ErrUtils   as X
 import FamInst    as X
 import FamInstEnv as X
 import Finder     as X
-import GHC        as X (HscEnv)
+import HscTypes   as X
 import Id         as X
 import IfaceEnv   as X
 import MkCore     as X
 import Module     as X
 import Name       as X
 import Outputable as X
+import PrelNames  as X
 import RdrName    as X
 import SrcLoc     as X
 import TcEnv      as X
