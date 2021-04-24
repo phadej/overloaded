@@ -17,7 +17,9 @@ module GHC.Compat.Expr (
     -- ** Constructors
     hsVar,
     hsApps,
+    hsApps_RDR,
     hsTyApp,
+    hsTyApp_RDR,
     hsTyVar,
     hsPar,
     hsOpApp,
@@ -115,6 +117,11 @@ hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
     app f x = L l (HsApp noExtField f x)
 
+hsApps_RDR :: SrcSpan -> LHsExpr GhcPs -> [LHsExpr GhcPs] -> LHsExpr GhcPs
+hsApps_RDR l = foldl' app where
+    app :: LHsExpr GhcPs -> LHsExpr GhcPs -> LHsExpr GhcPs
+    app f x = L l (HsApp noExtField f x)
+
 hsOpApp :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 hsOpApp l x op y = L l (OpApp GHC.defaultFixity x op y)
 
@@ -123,6 +130,13 @@ hsTyApp :: SrcSpan -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
 hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
 #else
 hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
+#endif
+
+hsTyApp_RDR :: SrcSpan -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
+#if MIN_VERSION_ghc(8,8,0)
+hsTyApp_RDR l x ty = L l $ HsAppType noExtField x (HsWC noExtField (L l ty))
+#else
+hsTyApp_RDR l x ty = L l $ HsAppType (HsWC noExtField (L l ty)) x
 #endif
 
 hsPar :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn

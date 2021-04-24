@@ -18,18 +18,18 @@ import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 
 #if MIN_VERSION_ghc(9,0,0)
-import qualified GHC.Plugins     as Plugins
+import qualified GHC.Plugins as Plugins
 #else
-import qualified GhcPlugins      as Plugins
+import qualified GhcPlugins as Plugins
 #endif
 
 import Overloaded.Plugin.Categories
 import Overloaded.Plugin.Diagnostics
-import Overloaded.Plugin.HasField
 import Overloaded.Plugin.IdiomBrackets
 import Overloaded.Plugin.LocalDo
 import Overloaded.Plugin.Names
 import Overloaded.Plugin.Rewrite
+import Overloaded.Plugin.TcPlugin
 import Overloaded.Plugin.V
 
 -------------------------------------------------------------------------------
@@ -77,6 +77,7 @@ import Overloaded.Plugin.V
 -- * @CodeLabels@ desugars @OverloadedLabels@ into Typed Template Haskell splices
 -- * @CodeStrings@ desugars string literals into Typed Template Haskell splices
 -- * @RebindableApplication@ changes how juxtaposition is interpreted
+-- * @OverloadedConstructors@ allows you to use overloaded constructor names!
 --
 -- == Known limitations
 --
@@ -157,7 +158,7 @@ import Overloaded.Plugin.V
 -- let f = pure ((+) :: Int -> Int -> Int)
 --     x = Just 1
 --     y = Just 2
--- 
+--
 --     z = let ($) = ('<*>') in f x y
 -- in z
 -- @
@@ -172,9 +173,10 @@ plugin = Plugins.defaultPlugin
   where
     enabled p args'
         | "RecordFields" `elem` args = Just p
+        | "Constructors" `elem` args = Just p
         | otherwise                  = Nothing
       where
-        args = concatMap (splitOn ":") args'
+        args = map (takeWhile (/= '=')) $ concatMap (splitOn ":") args'
 
 -------------------------------------------------------------------------------
 -- Renamer
@@ -327,13 +329,14 @@ parsedAction
     -> Plugins.Hsc Plugins.HsParsedModule
 parsedAction args _modSum pm = do
     let hsmodule = Plugins.hpm_module pm
+    topEnv <- GHC.Hsc $ \env warnMsgs -> return (env, warnMsgs)
 
     dflags <- GHC.getDynFlags
 
     debug $ show args
     debug $ GHC.showPpr dflags hsmodule
 
-    let names = defaultRdrNames
+    names <- getRdrNames dflags topEnv
     _opts@Options {..} <- parseArgs dflags args
 
     let transformNoOp :: a -> Rewrite a
@@ -346,7 +349,19 @@ parsedAction args _modSum pm = do
             let n = mkRdrName rn
             return $ transformRebindableApplication $ names { dollarName = n }
 
-    hsmodule' <- transformPs dflags trRebindApp hsmodule
+    trConstructors <- case optConstructors of
+        Off -> return transformNoOp
+        On Nothing -> return $ transformConstructors names
+        On (Just rn) -> do
+            let n = mkRdrName rn
+            return $ transformConstructors $ names { buildName = n }
+
+    let tr  = mconcat
+            [ trRebindApp
+            , trConstructors
+            ]
+
+    hsmodule' <- transformPs dflags tr hsmodule
     let pm' = pm { Plugins.hpm_module = hsmodule' }
 
     return pm'
@@ -440,6 +455,9 @@ parseArgs dflags = foldM go0 defaultOptions where
     go opts "RebindableApplication" vns = do
         mrn <- oneName "RebindableApplication" vns
         return $ opts { optRebindApp = On mrn }
+    go opts "Constructors" vns = do
+        mrn <- oneName "Constructors" vns
+        return $ opts { optConstructors = On mrn }
 
     go opts s _ = do
         warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
@@ -491,6 +509,7 @@ data Options = Options
     , optDo            :: Bool
     , optCategories    :: OnOff String -- module name
     , optRebindApp     :: OnOff VarName
+    , optConstructors  :: OnOff VarName
     }
   deriving (Eq, Show)
 
@@ -510,6 +529,7 @@ defaultOptions = Options
     , optDo            = False
     , optCategories    = Off
     , optRebindApp     = Off
+    , optConstructors  = Off
     }
 
 data StrSym
@@ -741,6 +761,38 @@ transformRebindableApplication RdrNames {..} (L l (HsApp _ f@(L fl _) x@(L xl _)
   where
     l' = GHC.mkSrcSpan (GHC.srcSpanEnd fl) (GHC.srcSpanStart xl)
 transformRebindableApplication _ _ = NoRewrite
+
+-------------------------------------------------------------------------------
+-- Constructors
+-------------------------------------------------------------------------------
+
+transformConstructors :: RdrNames -> LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs)
+transformConstructors RdrNames {..} (L l (SectionR _ (L lop (HsVar _ (L _ op))) arg))
+    | op == GHC.consDataCon_RDR
+    , (L _ (HsVar _ (L _ln n)), xs) <- splitHsApps arg
+    = Rewrite $ expr n xs
+  where
+    expr n args = hsApps_RDR l
+        (hsTyApp_RDR l
+            (L lop (HsVar noExtField (L lop buildName)))
+            (HsTyLit noExtField (HsStrTy GHC.NoSourceText (Plugins.occNameFS (GHC.rdrNameOcc n)))))
+        [ args' ]
+      where
+        args' = case args of
+            [x] -> x
+            _   -> L l (ExplicitTuple noExtField [ L l' (Present noExtField x) | x@(L l' _) <- args ] Plugins.Boxed)
+
+transformConstructors _ _ = NoRewrite
+
+splitHsApps :: LHsExpr GhcPs -> (LHsExpr GhcPs, [LHsExpr GhcPs])
+splitHsApps e = go e []
+  where
+    go :: LHsExpr GhcPs -> [LHsExpr GhcPs]
+       -> (LHsExpr GhcPs, [LHsExpr GhcPs])
+    go (L _ (HsApp _ f x))      xs = go f (x : xs)
+    go f                        xs = (f, xs)
+
+
 
 -------------------------------------------------------------------------------
 -- Transform
