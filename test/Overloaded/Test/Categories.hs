@@ -48,6 +48,15 @@ tests = testGroup "Categories"
                 test = (('x', 'y'), 'z')
             lhs test @?= rhs test
 
+        , testCase "Product pattern (more parens)" $ do
+            let lhs = proc x -> do
+                    (((y)), _) <- identity -< x
+                    ((z, _)) <- identity -< (((y)))
+                    identity -< z
+                rhs = fst . fst
+                test = (('x', 'y'), 'z')
+            lhs test @?= rhs test
+
         , testCase "Coproduct expression" $ do
             let lhs = proc x -> identity -< Left x
                 rhs :: a -> Either a ()
