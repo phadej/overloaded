@@ -70,6 +70,8 @@ parsePat (L l pat) = parsePat' l pat
 #endif
 
 parsePat' :: SrcSpan -> Pat GhcRn -> Rewrite (SomePattern GHC.Name)
+parsePat' _ (ParPat _ pat) =
+    parsePat pat
 parsePat' _ WildPat {} =
     return $ SomePattern PatternWild
 parsePat' _ (VarPat _ (L _ name)) =

@@ -43,7 +43,7 @@ tests = testGroup "Constructors"
         ]
 
     -- Source plugin rewrites (:name arg1 arg2 arg3)
-    -- into build @name (arg1, arg2, arg3).
+    -- into build @"name" (arg1, arg2, arg3).
     , testGroup "Overloaded build"
         [ testCase "Left" $
             (:Left 'x') @?= (Left 'x' :: Either Char Int)
