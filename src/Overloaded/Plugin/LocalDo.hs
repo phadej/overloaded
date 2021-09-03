@@ -5,12 +5,6 @@ import qualified Data.Generics   as SYB
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 
-#if MIN_VERSION_ghc(9,0,0)
-import qualified GHC.Plugins     as Plugins
-#else
-import qualified GhcPlugins      as Plugins
-#endif
-
 import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.Names
 import Overloaded.Plugin.Rewrite
@@ -54,20 +48,8 @@ transformDo'  names  doName _ (L l (BindStmt _ pat body _ _) : next) = do
     return $ hsApps l bind [ body, kont next' ]
   where
     bind  = hsTyApp l (hsVar l doName) (hsTyVar l (doBindName names))
-    kont next' = L l $ HsLam noExtField MG
-        { mg_ext    = noExtField
-        , mg_alts   = L l $ pure $ L l Match
-            { m_ext   = noExtField
-            , m_ctxt  = LambdaExpr
-            , m_pats  = [pat]
-            , m_grhss = GRHSs
-                { grhssExt        = noExtField
-                , grhssGRHSs      = [ L noSrcSpan $ GRHS noExtField [] $ next' ]
-                , grhssLocalBinds = L noSrcSpan $ EmptyLocalBinds noExtField
-                }
-            }
-        , mg_origin = Plugins.Generated
-        }
+    kont next' = hsLam l pat next'
+
 transformDo'  names  doName _ (L l (BodyStmt _ body _ _) : next) = do
     next' <- transformDo' names doName l next
     return $ hsApps l then_ [ body, next' ]
