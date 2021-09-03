@@ -132,8 +132,11 @@ module Overloaded.Categories (
     CCC (..),
     -- * Generalized element
     GeneralizedElement (..),
-    -- * WrappedArrow
+    -- * OPF
+    OPF (..),
+    -- * WrappedArrow and WrappedCategory
     WrappedArrow (..),
+    WrappedCategory (..),
     ) where
 
 import qualified Control.Arrow    as A
@@ -375,6 +378,20 @@ instance GeneralizedElement (->) where
     konst = const
 
 -------------------------------------------------------------------------------
+-- Object-Preserving Functor
+-------------------------------------------------------------------------------
+
+-- | Object-Preserving Functor (from Hask).
+-- Categories with combinator similar to arrows 'arr'.
+class C.Category cat => OPF cat where
+    -- We could have @type OPFObj cat a :: k@
+    -- but it's hard to work with when we want object preserving functor.
+    opf :: (a -> b) -> cat a b
+
+instance OPF (->) where
+    opf = id
+
+-------------------------------------------------------------------------------
 -- Star
 -------------------------------------------------------------------------------
 
@@ -412,6 +429,9 @@ instance Monad m => CCC (Star m) where
 
     eval = Star $ uncurry runStar
     transpose (Star f) = Star $ \a -> pure $ Star $ \b -> f (a, b)
+
+instance Monad m => OPF (Star m) where
+    opf f = Star (pure . f)
 
 -------------------------------------------------------------------------------
 -- Kleisli
@@ -452,10 +472,15 @@ instance Monad m => CCC (Kleisli m) where
     eval = Kleisli $ uncurry runKleisli
     transpose (Kleisli f) = Kleisli $ \a -> pure $ Kleisli $ \b -> f (a, b)
 
+instance Monad m => OPF (Kleisli m) where
+    opf f = Kleisli (pure . f)
+
 -------------------------------------------------------------------------------
 -- WrappedArrow
 -------------------------------------------------------------------------------
 
+-- | 'Arrow' correspond to various classes
+-- in this hierarachy.
 newtype WrappedArrow arr a b = WrapArrow { unwrapArrow :: arr a b }
 
 instance C.Category arr => C.Category (WrappedArrow arr) where
@@ -494,3 +519,34 @@ instance A.ArrowApply arr => CCC (WrappedArrow arr) where
 instance A.Arrow arr => GeneralizedElement (WrappedArrow arr) where
     type Object (WrappedArrow arr) a = a
     konst = WrapArrow . A.arr . const
+
+instance A.Arrow arr => OPF (WrappedArrow arr) where
+    opf = WrapArrow . A.arr
+
+-------------------------------------------------------------------------------
+-- WrappedCategory
+-------------------------------------------------------------------------------
+
+newtype WrappedCategory cat a b = WrapCat { unwrapCat :: cat a b }
+
+instance C.Category cat => C.Category (WrappedCategory cat) where
+    id = WrapCat identity
+    WrapCat f . WrapCat g = WrapCat (f %% g)
+
+instance (OPF cat, CartesianCategory cat, Product cat ~ (,))
+    => A.Arrow (WrappedCategory cat)
+  where
+    arr = WrapCat . opf
+    WrapCat f *** WrapCat g = WrapCat (fanout (f %% proj1) (g %% proj2))
+
+instance (OPF cat, CartesianCategory cat, Product cat ~ (,)
+    , CocartesianCategory cat, Coproduct cat ~ Either)
+    => A.ArrowChoice (WrappedCategory cat)
+  where
+    WrapCat f +++ WrapCat g = WrapCat (fanin (inl %% f) (inr %% g))
+
+instance (OPF cat, CartesianCategory cat, Product cat ~ (,)
+    , CCC cat, Exponential cat ~ cat)
+    => A.ArrowApply (WrappedCategory cat)
+  where
+    app = WrapCat eval %% A.first (WrapCat (opf unwrapCat))
