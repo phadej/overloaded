@@ -73,6 +73,7 @@ data CatNames = CatNames
     , catFaninName       :: GHC.Name
     , catDistrName       :: GHC.Name
     , catEvalName        :: GHC.Name
+    , catOpfName         :: GHC.Name
     }
 
 getNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.TcM Names
@@ -134,6 +135,7 @@ getCatNames dflags env module_ = do
     catDistrName    <- lookupName dflags env module_ "distr"
     catEvalName     <- lookupName dflags env module_ "eval"
     catTerminalName <- lookupName dflags env module_ "terminal"
+    catOpfName      <- lookupName dflags env module_ "opf"
 
     return CatNames {..}
 

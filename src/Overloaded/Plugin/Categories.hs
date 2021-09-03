@@ -1,10 +1,14 @@
 {-# LANGUAGE CPP                #-}
 {-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE ViewPatterns       #-}
 {-# LANGUAGE DeriveFunctor      #-}
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE KindSignatures     #-}
 {-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE PolyKinds          #-}
+{-# LANGUAGE TypeOperators      #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE EmptyCase          #-}
 module Overloaded.Plugin.Categories where
 
 import Data.Bifunctor       (Bifunctor (..))
@@ -40,7 +44,7 @@ transformCategories names (L _l (HsProc _ pat (L _ (HsCmdTop _ cmd)))) = do
     SomePattern pat' <- parsePat pat
     kont <- parseCmd names (patternMap pat') cmd
     let proc :: Proc (LHsExpr GhcRn) Void
-        proc = Proc (nameToString <$> pat') kont
+        proc = Proc (mapPattern nameToString pat') kont
 
         morp :: Morphism (LHsExpr GhcRn)
         morp = desugar absurd proc
@@ -216,7 +220,7 @@ parseStmts names ctx _ (L l (BindStmt _ pat body _ _) : next) = do
     SomePattern pat' <- parsePat pat
     cont1 <- parseCmd names ctx body
     cont2 <- parseStmts names (combineMaps ctx pat') l next
-    return $ compCont (nameToString <$> pat') cont1 (second assoc cont2)
+    return $ compCont (mapPattern nameToString pat') cont1 (second assoc cont2)
 parseStmts names ctx _ [L _ (LastStmt _ body _ _)] =
     parseCmd names ctx body
 parseStmts _     _   _ (L l stmt : _) =
@@ -260,7 +264,7 @@ unvar _ g (F a) = g a
 
 -- | Proc syntax
 data Proc term a where
-    Proc :: Pattern sh String -> Continuation term (Var (Index sh) a) -> Proc term a
+    Proc :: Pattern String sh -> Continuation term (Var (Index sh) a) -> Proc term a
 
 deriving instance (Show a, Show term) => Show (Proc term a)
 
@@ -271,7 +275,7 @@ data Continuation term a where
     Last :: Either (Expression a) (Morphism term) -> Expression a -> Continuation term a
       -- ^ term -< y
     Edge
-        :: Pattern sh String
+        :: Pattern String sh
         -> Either (Expression a) (Morphism term)
         -> Expression a
         -> Continuation term (Var (Index sh) a)
@@ -280,8 +284,8 @@ data Continuation term a where
 
     Split
         :: Expression a
-        -> Pattern shA String
-        -> Pattern shB String
+        -> Pattern String shA
+        -> Pattern String shB
         -> Continuation term (Var (Index shA) a)
         -> Continuation term (Var (Index shB) a)
         -> Continuation term a
@@ -299,7 +303,7 @@ instance Functor (Continuation term) where
     fmap = second
 
 compCont
-    :: Pattern sh String
+    :: Pattern String sh
     -> Continuation term a
     -> Continuation term (Var (Index sh) a)
     -> Continuation term a
@@ -318,50 +322,132 @@ weaken1 = fmap (unvar B (F . F))
 
 caseCont
     :: Expression a
-    -> Pattern shA Plugins.Name
-    -> Pattern shB Plugins.Name
+    -> Pattern Plugins.Name shA
+    -> Pattern Plugins.Name shB
     -> Continuation (LHsExpr GhcRn) (Var (Index shA) a)
     -> Continuation (LHsExpr GhcRn) (Var (Index shB) a)
     -> Continuation (LHsExpr GhcRn) a
 caseCont e patA patB =
-    Split e (fmap nameToString patA) (fmap nameToString patB)
+    Split e (mapPattern nameToString patA) (mapPattern nameToString patB)
+
+-------------------------------------------------------------------------------
+-- Showable GHC Name
+-------------------------------------------------------------------------------
+
+newtype WrappedName = WrapName { unwrapName :: GHC.Name }
+
+instance Show WrappedName where
+    showsPrec _(WrapName n) = shows (nameToString n)
 
 -------------------------------------------------------------------------------
 -- Patterns
 -------------------------------------------------------------------------------
 
-data Shape = One | Two Shape Shape
+data Shape = One | Two Shape Shape | Many [Shape]
 
-data Pattern :: Shape -> Type -> Type where
-    PatternVar   :: a -> Pattern 'One a
-    PatternWild  :: Pattern 'One a
-    PatternTuple :: Pattern l a -> Pattern r a -> Pattern ('Two l r) a
+data Pattern :: Type -> Shape -> Type where
+    PatternVar   :: a -> Pattern a 'One
+    PatternWild  :: Pattern a 'One
+    PatternTuple
+        :: Pattern a l
+        -> Pattern a r
+        -> Pattern a ('Two l r)
+    PatternCon
+        :: WrappedName
+        -> NP (K WrappedName) xs
+        -> NP (Pattern a) xs
+        -> Pattern a ('Many xs)
 
-deriving instance Show a => Show (Pattern sh a)
-deriving instance Functor (Pattern sh)
+instance Show a => Show (Pattern a sh) where
+    showsPrec d (PatternVar a) = showParen (d > 10)
+        $ showString "PatternVar "
+        . showsPrec 11 a
+    showsPrec _ PatternWild = showString "PatternWild"
+    showsPrec d (PatternTuple l r) = showParen (d > 10)
+        $ showString "PatternTuple "
+        . showsPrec 11 l
+        . showChar ' '
+        . showsPrec 11 r
+
+    showsPrec d (PatternCon dc xs ps) = showParen (d > 10)
+        $ showString "PatternCon "
+        . showsPrec 11 dc
+        . showChar ' '
+        . showsPrec 11 xs
+        . showChar ' '
+        . showsPrec 11 ps
+
+instance Show a => ShowU (Pattern a) where showsPrecU = showsPrec
+
+mapPattern :: (a -> b) -> Pattern a sh -> Pattern b sh
+mapPattern = error "mapPattern"
 
 data SomePattern :: Type -> Type where
-    SomePattern :: Pattern sh a -> SomePattern a
+    SomePattern :: Pattern a sh -> SomePattern a
 
 data Index :: Shape -> Type where
     Here :: Index 'One
     InL  :: Index x -> Index ('Two x y)
     InR  :: Index y -> Index ('Two x y)
+    Some :: NS Index xs -> Index ('Many xs)
 
 deriving instance Show (Index sh)
+instance ShowU Index where showsPrecU = showsPrec
 
-patternMap :: Ord a => Pattern sh a -> Map a (Index sh)
+patternMap :: Ord k => Pattern k sh -> Map k (Index sh)
 patternMap (PatternVar x)     = Map.singleton x Here
 patternMap PatternWild        = Map.empty
 patternMap (PatternTuple l r) = Map.union
     (Map.map InL (patternMap l))
     (Map.map InR (patternMap r))
+patternMap (PatternCon _ _ ps)  =
+    Map.map Some $ Map.unions $ go ps
+  where
+    go :: Ord k => NP (Pattern k) ps -> [Map k (NS Index ps)]
+    go Nil = []
+    go (x :* xs) = Map.map Z (patternMap x) : map (Map.map S) (go xs)
 
-combineMaps
-    :: Map Plugins.Name b
-    -> Pattern sh Plugins.Name
-    -> Map Plugins.Name (Var (Index sh) b)
+combineMaps :: Ord k => Map k b -> Pattern k sh -> Map k (Var (Index sh) b)
 combineMaps m pat = Map.union (Map.map F m) (Map.map B (patternMap pat))
+
+-------------------------------------------------------------------------------
+-- mini-sop
+-------------------------------------------------------------------------------
+
+class ShowU (f :: k -> Type) where
+    showsPrecU :: Int -> f a -> ShowS
+
+data NP (f :: k -> Type) (xs :: [k]) where
+    Nil  :: NP f '[]
+    (:*) :: f x -> NP f xs -> NP f (x ': xs)
+
+infixr 5 :*
+
+toListNP :: (NP (K a) xs) -> [a]
+toListNP Nil         = []
+toListNP (K x :* xs) = x : toListNP xs
+
+instance ShowU f => Show (NP f xs) where
+    showsPrec _ Nil = showString "Nil"
+    showsPrec d (x :* xs) = showParen (d > 5)
+        $ showsPrecU 6 x
+        . showString " :* "
+        . showsPrec 5 xs
+
+data NS (f :: k -> Type) (xs :: [k]) where
+    Z :: f x -> NS f (x ': xs)
+    S :: NS f xs -> NS f (x ': xs)
+
+instance ShowU f => Show (NS f xs) where
+    showsPrec d (Z x) = showParen (d > 10)
+        $ showString "Z " . showsPrecU 11 x
+    showsPrec d (S x) = showParen (d > 10)
+        $ showString "S " . showsPrec 11 x
+
+newtype K a b = K a
+  deriving (Eq, Show)
+
+instance Show a => ShowU (K a) where showsPrecU = showsPrec
 
 -------------------------------------------------------------------------------
 -- Expressions
@@ -393,6 +479,7 @@ data Morphism term
     | MDistr
     | MEval
     | MTerm term
+    | MPat WrappedName [WrappedName]
   deriving (Show, Functor)
 
 instance Semigroup (Morphism term) where
@@ -447,11 +534,17 @@ desugarC ctx (Split e pa pb ka kb) = mconcat
         MId
     ]
 
-desugarP :: Pattern sh name -> Index sh -> Morphism term
-desugarP (PatternVar _)     Here    = MId
-desugarP PatternWild        Here    = MId
-desugarP (PatternTuple l _) (InL i) = desugarP l i <> MProj1
-desugarP (PatternTuple _ r) (InR i) = desugarP r i <> MProj2
+desugarP :: Pattern name sh -> Index sh -> Morphism term
+desugarP (PatternVar _)          Here      = MId
+desugarP PatternWild             Here      = MId
+desugarP (PatternTuple l _)      (InL i)   = desugarP l i <> MProj1
+desugarP (PatternTuple _ r)      (InR i)   = desugarP r i <> MProj2
+desugarP (PatternCon dc xs0 ps0) (Some i0) = end ps0 i0 <> MPat dc (toListNP xs0)
+  where
+    end :: NP (Pattern name) xs -> NS Index xs -> Morphism term
+    end Nil       x     = case x of {}
+    end (p :* _)  (Z j) = desugarP p j <> MProj1
+    end (_ :* ps) (S j) = end ps j <> MProj2
 
 desugarE :: (a -> Morphism term) -> Expression a -> Morphism term
 desugarE ctx = go where
@@ -479,3 +572,20 @@ generate Names {catNames = CatNames {..}} = go where
     go MDistr         = hsVar noSrcSpan catDistrName
     go MEval          = hsVar noSrcSpan catEvalName
     go (MCase f g)    = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFaninName) [go f, go g]
+    go (MPat dc xs)   = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catOpfName) [generatePat dc xs]
+
+generatePat :: WrappedName -> [WrappedName] -> LHsExpr GhcRn
+generatePat (WrapName dc) (map unwrapName -> xs) = L noSrcSpan $ HsLam noExtField MG
+    { mg_ext    = noExtField
+    , mg_alts   = L noSrcSpan $ pure $ L noSrcSpan Match
+        { m_ext = noExtField
+        , m_ctxt = LambdaExpr
+        , m_pats = [_]
+        , m_grhss = GRHSs
+            { grhssExt        = noExtField
+            , grhssGRHSs      = [ L noSrcSpan $ GRHS noExtField [] $ _ ]
+            , grhssLocalBinds = L noSrcSpan $ EmptyLocalBinds noExtField
+            }
+        }
+    , mg_origin = Plugins.Generated
+    }
