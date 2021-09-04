@@ -18,6 +18,7 @@ module GHC.Compat.Expr (
     hsVar,
     hsApps,
     hsApps_RDR,
+    matchHsApps,
     hsTyApp,
     hsTyApp_RDR,
     hsTyVar,
@@ -118,7 +119,11 @@ hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
     app f x = L l (HsApp noExtField f x)
 
-
+matchHsApps :: LHsExpr GhcRn -> (LHsExpr GhcRn, [LHsExpr GhcRn])
+matchHsApps (L _ (HsApp _ f x)) =
+    let (g, ys) = matchHsApps f
+    in (g, ys ++ [x])
+matchHsApps e = (e, [])
 
 hsApps_RDR :: SrcSpan -> LHsExpr GhcPs -> [LHsExpr GhcPs] -> LHsExpr GhcPs
 hsApps_RDR l = foldl' app where
@@ -164,5 +169,3 @@ hsPar l e = L l (HsPar noExtField e)
 
 nameToString :: GHC.Name -> String
 nameToString = GHC.occNameString . GHC.occName
-
-

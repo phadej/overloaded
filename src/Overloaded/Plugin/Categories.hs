@@ -81,7 +81,7 @@ parsePat' _ WildPat {} =
     return $ Some PatternWild
 parsePat' _ (VarPat _ (L _ name)) =
     return $ Some $ PatternVar name
-parsePat' _ (TuplePat _ [x, y] Plugins.Boxed) = do
+parsePat' _ (TuplePat _ [x, y] GHC.Boxed) = do
     Some x' <- parsePat x
     Some y' <- parsePat y
     return $ Some $ PatternTuple x' y'
@@ -89,17 +89,17 @@ parsePat' l TuplePat {} = Error $ \dflags ->
     putError dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
 parsePat' _ (ConPat _ (L _ dc) (GHC.PrefixCon ps)) = do
     Some ps' <- fromListNP <$> traverse parsePat ps 
-    withNames 0 ps' $ \ns' -> return $ Some $ PatternCon (WrapName dc) ns' ps'
+    withNamesNP 0 ps' $ \ns' -> return $ Some $ PatternCon (WrapName dc) ns' ps'
 parsePat' l pat = Error $ \dflags ->
     putError dflags l $ GHC.text "Cannot parse pattern for Overloaded:Categories"
         GHC.$$ GHC.ppr pat
         GHC.$$ GHC.text (SYB.gshow pat)
 
-withNames :: Int -> NP f xs -> (NP (K WrappedName) xs -> Rewrite a) -> Rewrite a
-withNames _ Nil       k = k Nil
-withNames i (_ :* xs) k =
+withNamesNP :: Int -> NP f xs -> (NP (K WrappedName) xs -> Rewrite a) -> Rewrite a
+withNamesNP _ Nil       k = k Nil
+withNamesNP i (_ :* xs) k =
     WithName ("arg" ++ show i) $ \n ->
-    withNames (i + 1) xs $ \ns ->
+    withNamesNP (i + 1) xs $ \ns ->
     k (K (WrapName n) :* ns)
 
 parseExpr
@@ -117,7 +117,7 @@ parseExpr _     ctx (L _ (HsVar _ (L l name)))
         Nothing -> Error $ \dflags ->
             putError dflags l $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
         Just b -> return $ ExpressionVar (B b)
-parseExpr names ctx (L _ (ExplicitTuple _ [L _ (Present _ x), L _ (Present _ y)] Plugins.Boxed)) = do
+parseExpr names ctx (L _ (ExplicitTuple _ [L _ (Present _ x), L _ (Present _ y)] GHC.Boxed)) = do
     x' <- parseExpr names ctx x
     y' <- parseExpr names ctx y
     return (ExpressionTuple x' y')
@@ -132,10 +132,24 @@ parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
         return (ExpressionRight x')
     | otherwise = Error $ \dflags ->
         putError dflags l $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
+parseExpr names ctx expr
+    | (L _ (HsVar _ (L _ dc)), xs) <- matchHsApps expr
+    , GHC.isDataOcc (GHC.occName dc)
+    = do
+        xs' <- traverse (parseExpr names ctx) xs
+        withNames 0 xs' $ \ns' -> return $
+            ExpressionMany (WrapName dc) ns'
 parseExpr _     _   (L l expr) = Error $ \dflags ->
     putError dflags l $ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
         GHC.$$ GHC.ppr expr
         GHC.$$ GHC.text (SYB.gshow expr)
+
+withNames :: Int -> [x] -> ([(WrappedName, x)] -> Rewrite a) -> Rewrite a
+withNames _ []       k = k []
+withNames i (x : xs) k =
+    WithName ("arg" ++ show i) $ \n ->
+    withNames (i + 1) xs $ \ns ->
+    k ((WrapName n, x) : ns)
 
 parseCmd
     :: Names
@@ -284,14 +298,15 @@ instance Bifunctor Proc where
 
 data Continuation term a where
     Last :: Either (Expression a) (Morphism term) -> Expression a -> Continuation term a
-      -- ^ term -< y
+      -- ^ last: @term -< y@
+  
     Edge
         :: Pattern String sh
         -> Either (Expression a) (Morphism term)
         -> Expression a
         -> Continuation term (Var (Index sh) a)
         -> Continuation term a
-      -- ^ x <- term -< y
+      -- ^ bind: @x <- term -< y@
 
     Split
         :: Expression a
@@ -369,25 +384,7 @@ data Pattern :: Type -> Shape -> Type where
         -> NP (Pattern a) xs
         -> Pattern a ('Many xs)
 
-instance Show a => Show (Pattern a sh) where
-    showsPrec d (PatternVar a) = showParen (d > 10)
-        $ showString "PatternVar "
-        . showsPrec 11 a
-    showsPrec _ PatternWild = showString "PatternWild"
-    showsPrec d (PatternTuple l r) = showParen (d > 10)
-        $ showString "PatternTuple "
-        . showsPrec 11 l
-        . showChar ' '
-        . showsPrec 11 r
-
-    showsPrec d (PatternCon dc xs ps) = showParen (d > 10)
-        $ showString "PatternCon "
-        . showsPrec 11 dc
-        . showChar ' '
-        . showsPrec 11 xs
-        . showChar ' '
-        . showsPrec 11 ps
-
+deriving instance Show a => Show (Pattern a sh)
 instance Show a => ShowU (Pattern a) where showsPrecU = showsPrec
 
 mapPattern :: (a -> b) -> Pattern a sh -> Pattern b sh
@@ -478,12 +475,13 @@ instance Show a => ShowU (K a) where showsPrecU = showsPrec
 -- Expressions
 -------------------------------------------------------------------------------
 
-data Expression a
-    = ExpressionVar a
-    | ExpressionUnit
-    | ExpressionTuple (Expression a) (Expression a)
-    | ExpressionLeft (Expression a)
-    | ExpressionRight (Expression a)
+data Expression :: Type -> Type where
+    ExpressionVar   :: a -> Expression a
+    ExpressionUnit  :: Expression a
+    ExpressionTuple :: Expression a -> Expression a -> Expression a
+    ExpressionLeft  :: Expression a -> Expression a
+    ExpressionRight :: Expression a -> Expression a
+    ExpressionMany  :: WrappedName -> [(WrappedName, Expression a)] -> Expression a
   deriving (Show, Functor)
 
 -------------------------------------------------------------------------------
@@ -505,6 +503,7 @@ data Morphism term
     | MEval
     | MTerm term
     | MPat WrappedName [WrappedName]
+    | MExp WrappedName [WrappedName]
   deriving (Show, Functor)
 
 instance Semigroup (Morphism term) where
@@ -573,11 +572,16 @@ desugarP (PatternCon dc xs0 ps0) (Pick i0) = end ps0 i0 <> MPat dc (toListNP xs0
 
 desugarE :: (a -> Morphism term) -> Expression a -> Morphism term
 desugarE ctx = go where
-    go ExpressionUnit        = MTerminal
-    go (ExpressionVar a)     = ctx a
-    go (ExpressionTuple x y) = MProduct (go x) (go y)
-    go (ExpressionLeft x)    = MInL <> go x
-    go (ExpressionRight y)   = MInR <> go y
+    go ExpressionUnit         = MTerminal
+    go (ExpressionVar a)      = ctx a
+    go (ExpressionTuple x y)  = MProduct (go x) (go y)
+    go (ExpressionLeft x)     = MInL <> go x
+    go (ExpressionRight y)    = MInR <> go y
+    go (ExpressionMany dc es) = MExp dc (map fst es) <> end (map (go . snd) es)
+
+    end :: [Morphism term] -> Morphism term
+    end []       = MTerminal
+    end (f : fs) = MProduct f (end fs)
 
 -------------------------------------------------------------------------------
 -- Generating
@@ -598,17 +602,34 @@ generate Names {catNames = CatNames {..}} = go where
     go MEval          = hsVar noSrcSpan catEvalName
     go (MCase f g)    = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFaninName) [go f, go g]
     go (MPat dc xs)   = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catOpfName) [generatePat dc xs]
+    go (MExp dc xs)   = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catOpfName) [generateExp dc xs]
 
 generatePat :: WrappedName -> [WrappedName] -> LHsExpr GhcRn
 generatePat (WrapName dc) (map unwrapName -> xs) = hsLam noSrcSpan
     (dataconPat dc xs)
     (tupleExpr xs)
 
+generateExp :: WrappedName -> [WrappedName] -> LHsExpr GhcRn
+generateExp (WrapName dc) (map unwrapName -> xs) = hsLam noSrcSpan
+    (tuplePat xs)
+    (dataconExpr dc xs)
+
 dataconPat :: GHC.Name -> [GHC.Name] -> LPat GhcRn
 dataconPat dc xs = L noSrcSpan $ ConPat
     noExtField
     (L noSrcSpan dc)
     (GHC.PrefixCon [ L noSrcSpan (VarPat noExtField (L noSrcSpan x)) | x <- xs ])
+
+dataconExpr :: GHC.Name -> [GHC.Name] -> LHsExpr GhcRn
+dataconExpr dc xs = hsApps noSrcSpan (hsVar noSrcSpan dc) [ hsVar noSrcSpan x | x <- xs ]
+
+tuplePat :: [GHC.Name] -> LPat GhcRn
+tuplePat [] = L noSrcSpan $ TuplePat noExtField [] GHC.Boxed
+tuplePat (x : xs) = L noSrcSpan $ TuplePat noExtField
+    [ L noSrcSpan $ VarPat noExtField (L noSrcSpan x)
+    , tuplePat xs
+    ]
+    GHC.Boxed
 
 tupleExpr :: [GHC.Name] -> LHsExpr GhcRn
 tupleExpr []       = hsVar noSrcSpan (GHC.getName (GHC.tupleDataCon GHC.Boxed 0))
