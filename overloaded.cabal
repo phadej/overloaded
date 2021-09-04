@@ -206,6 +206,15 @@ library optics-hasfield
     , optics-core
     , record-hasfield
 
+test-suite opf
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          opf.hs
+  build-depends:
+    , base
+    , overloaded
+
 test-suite test
   default-language: Haskell2010
   type:             exitcode-stdio-1.0

@@ -6,6 +6,7 @@
 {-# LANGUAGE KindSignatures     #-}
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE PolyKinds          #-}
+{-# LANGUAGE RankNTypes         #-}
 {-# LANGUAGE TypeOperators      #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE EmptyCase          #-}
@@ -41,7 +42,7 @@ transformCategories
     -> LHsExpr GhcRn
     -> Rewrite (LHsExpr GhcRn)
 transformCategories names (L _l (HsProc _ pat (L _ (HsCmdTop _ cmd)))) = do
-    SomePattern pat' <- parsePat pat
+    Some pat' <- parsePat pat
     kont <- parseCmd names (patternMap pat') cmd
     let proc :: Proc (LHsExpr GhcRn) Void
         proc = Proc (mapPattern nameToString pat') kont
@@ -77,19 +78,29 @@ parsePat' :: SrcSpan -> Pat GhcRn -> Rewrite (SomePattern GHC.Name)
 parsePat' _ (ParPat _ pat) =
     parsePat pat
 parsePat' _ WildPat {} =
-    return $ SomePattern PatternWild
+    return $ Some PatternWild
 parsePat' _ (VarPat _ (L _ name)) =
-    return $ SomePattern $ PatternVar name
+    return $ Some $ PatternVar name
 parsePat' _ (TuplePat _ [x, y] Plugins.Boxed) = do
-    SomePattern x' <- parsePat x
-    SomePattern y' <- parsePat y
-    return $ SomePattern $ PatternTuple x' y'
+    Some x' <- parsePat x
+    Some y' <- parsePat y
+    return $ Some $ PatternTuple x' y'
 parsePat' l TuplePat {} = Error $ \dflags ->
     putError dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
+parsePat' _ (ConPat _ (L _ dc) (GHC.PrefixCon ps)) = do
+    Some ps' <- fromListNP <$> traverse parsePat ps 
+    withNames 0 ps' $ \ns' -> return $ Some $ PatternCon (WrapName dc) ns' ps'
 parsePat' l pat = Error $ \dflags ->
     putError dflags l $ GHC.text "Cannot parse pattern for Overloaded:Categories"
         GHC.$$ GHC.ppr pat
         GHC.$$ GHC.text (SYB.gshow pat)
+
+withNames :: Int -> NP f xs -> (NP (K WrappedName) xs -> Rewrite a) -> Rewrite a
+withNames _ Nil       k = k Nil
+withNames i (_ :* xs) k =
+    WithName ("arg" ++ show i) $ \n ->
+    withNames (i + 1) xs $ \ns ->
+    k (K (WrapName n) :* ns)
 
 parseExpr
     :: Names
@@ -169,8 +180,8 @@ parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
             -> do
                 expr' <- parseExpr names ctx expr
 
-                SomePattern apat <- parsePat aarg
-                SomePattern bpat <- parsePat barg
+                Some apat <- parsePat aarg
+                Some bpat <- parsePat barg
 
                 acont <- parseCmd names (combineMaps ctx apat) abody
                 bcont <- parseCmd names (combineMaps ctx bpat) bbody
@@ -217,7 +228,7 @@ parseStmts names ctx _ (L l (BindStmt _ pat body) : next) = do
 #else
 parseStmts names ctx _ (L l (BindStmt _ pat body _ _) : next) = do
 #endif
-    SomePattern pat' <- parsePat pat
+    Some pat' <- parsePat pat
     cont1 <- parseCmd names ctx body
     cont2 <- parseStmts names (combineMaps ctx pat') l next
     return $ compCont (mapPattern nameToString pat') cont1 (second assoc cont2)
@@ -380,16 +391,21 @@ instance Show a => Show (Pattern a sh) where
 instance Show a => ShowU (Pattern a) where showsPrecU = showsPrec
 
 mapPattern :: (a -> b) -> Pattern a sh -> Pattern b sh
-mapPattern = error "mapPattern"
+mapPattern f (PatternVar x)        = PatternVar (f x)
+mapPattern _ PatternWild           = PatternWild
+mapPattern f (PatternTuple l r)    = PatternTuple (mapPattern f l) (mapPattern f r)
+mapPattern f (PatternCon dc ns ps) = PatternCon dc ns (mapNP (mapPattern f) ps)
 
-data SomePattern :: Type -> Type where
-    SomePattern :: Pattern a sh -> SomePattern a
+data Some (f :: k -> Type) where
+    Some :: f a -> Some f
+
+type SomePattern a = Some (Pattern a)
 
 data Index :: Shape -> Type where
     Here :: Index 'One
     InL  :: Index x -> Index ('Two x y)
     InR  :: Index y -> Index ('Two x y)
-    Some :: NS Index xs -> Index ('Many xs)
+    Pick :: NS Index xs -> Index ('Many xs)
 
 deriving instance Show (Index sh)
 instance ShowU Index where showsPrecU = showsPrec
@@ -401,7 +417,7 @@ patternMap (PatternTuple l r) = Map.union
     (Map.map InL (patternMap l))
     (Map.map InR (patternMap r))
 patternMap (PatternCon _ _ ps)  =
-    Map.map Some $ Map.unions $ go ps
+    Map.map Pick $ Map.unions $ go ps
   where
     go :: Ord k => NP (Pattern k) ps -> [Map k (NS Index ps)]
     go Nil = []
@@ -426,6 +442,15 @@ infixr 5 :*
 toListNP :: (NP (K a) xs) -> [a]
 toListNP Nil         = []
 toListNP (K x :* xs) = x : toListNP xs
+
+fromListNP :: [Some f] -> Some (NP f)
+fromListNP [] = Some Nil
+fromListNP (Some x : xs) = case fromListNP xs of
+    Some xs' -> Some (x :* xs')
+
+mapNP :: (forall x. f x -> g x) -> NP f xs -> NP g xs
+mapNP _ Nil       = Nil
+mapNP f (x :* xs) = f x :* mapNP f xs
 
 instance ShowU f => Show (NP f xs) where
     showsPrec _ Nil = showString "Nil"
@@ -539,7 +564,7 @@ desugarP (PatternVar _)          Here      = MId
 desugarP PatternWild             Here      = MId
 desugarP (PatternTuple l _)      (InL i)   = desugarP l i <> MProj1
 desugarP (PatternTuple _ r)      (InR i)   = desugarP r i <> MProj2
-desugarP (PatternCon dc xs0 ps0) (Some i0) = end ps0 i0 <> MPat dc (toListNP xs0)
+desugarP (PatternCon dc xs0 ps0) (Pick i0) = end ps0 i0 <> MPat dc (toListNP xs0)
   where
     end :: NP (Pattern name) xs -> NS Index xs -> Morphism term
     end Nil       x     = case x of {}
@@ -575,17 +600,20 @@ generate Names {catNames = CatNames {..}} = go where
     go (MPat dc xs)   = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catOpfName) [generatePat dc xs]
 
 generatePat :: WrappedName -> [WrappedName] -> LHsExpr GhcRn
-generatePat (WrapName dc) (map unwrapName -> xs) = L noSrcSpan $ HsLam noExtField MG
-    { mg_ext    = noExtField
-    , mg_alts   = L noSrcSpan $ pure $ L noSrcSpan Match
-        { m_ext = noExtField
-        , m_ctxt = LambdaExpr
-        , m_pats = [_]
-        , m_grhss = GRHSs
-            { grhssExt        = noExtField
-            , grhssGRHSs      = [ L noSrcSpan $ GRHS noExtField [] $ _ ]
-            , grhssLocalBinds = L noSrcSpan $ EmptyLocalBinds noExtField
-            }
-        }
-    , mg_origin = Plugins.Generated
-    }
+generatePat (WrapName dc) (map unwrapName -> xs) = hsLam noSrcSpan
+    (dataconPat dc xs)
+    (tupleExpr xs)
+
+dataconPat :: GHC.Name -> [GHC.Name] -> LPat GhcRn
+dataconPat dc xs = L noSrcSpan $ ConPat
+    noExtField
+    (L noSrcSpan dc)
+    (GHC.PrefixCon [ L noSrcSpan (VarPat noExtField (L noSrcSpan x)) | x <- xs ])
+
+tupleExpr :: [GHC.Name] -> LHsExpr GhcRn
+tupleExpr []       = hsVar noSrcSpan (GHC.getName (GHC.tupleDataCon GHC.Boxed 0))
+tupleExpr (x : xs) = L noSrcSpan $ ExplicitTuple noExtField
+    [L noSrcSpan $ Present noExtField z
+    | z <- [ hsVar noSrcSpan x , tupleExpr xs ]
+    ]
+    GHC.Boxed
