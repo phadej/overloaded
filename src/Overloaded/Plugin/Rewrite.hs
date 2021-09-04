@@ -12,7 +12,7 @@ import qualified GHC.Compat.All  as GHC
 data Rewrite a
     = NoRewrite
     | Rewrite a -- TODO: add warnings
-    | WithName (GHC.Name -> Rewrite a)
+    | WithName String (GHC.Name -> Rewrite a)
     | Error (GHC.DynFlags -> IO ())
   deriving (Functor)
 
@@ -32,5 +32,5 @@ instance Monad Rewrite where
     return = Rewrite
     NoRewrite >>= _ = NoRewrite
     Rewrite a >>= k = k a
-    WithName f >>= k = WithName (\n -> f n >>= k)
+    WithName s f >>= k = WithName s (\n -> f n >>= k)
     Error err >>= _ = Error err

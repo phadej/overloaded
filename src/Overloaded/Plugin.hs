@@ -613,7 +613,7 @@ transformSymbols _ _ = NoRewrite
 transformCodeStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformCodeStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) = do
     let inner = hsApps l (hsVar l codeFromStringName) [e]
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
+    WithName "str" $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
 
 transformCodeStrings _ _ = NoRewrite
 
@@ -713,7 +713,7 @@ transformCodeLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
     let name' = hsVar l codeFromLabelName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     -- Rewrite $ L l $ HsRnBracketOut noExtField (ExpBr noExtField inner) []
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
+    WithName "label" $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
 
 transformCodeLabels _ _ = NoRewrite
 
@@ -815,8 +815,8 @@ transformRn dflags f = SYB.everywhereM (SYB.mkM transform') where
         go (Error err)  = do
             liftIO $ err dflags
             fail "Error in Overloaded plugin"
-        go (WithName kont) = do
-            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+        go (WithName name kont) = do
+            n <- GHC.newNameAt (GHC.mkVarOcc name) l
             go (kont n)
 
 transformPs
@@ -842,8 +842,8 @@ transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
             liftIO $ err dflags
             -- Hsc doesn't have MonadFail instance
             liftIO $ throwIO $ userError "Error in Overloaded plugin"
-        go (WithName _kont) = do
-            liftIO $ throwIO $ userError "Error in Overloaded plugin: WithName in Ps transform"
+        go (WithName name _kont) = do
+            liftIO $ throwIO $ userError $ "Error in Overloaded plugin: WithName (" ++ name ++ ") in Ps transform"
 
 transformType
     :: GHC.DynFlags
@@ -859,6 +859,6 @@ transformType dflags f = SYB.everywhereM (SYB.mkM transform') where
         go (Error err)  = do
             liftIO $ err dflags
             fail "Error in Overloaded plugin"
-        go (WithName kont) = do
-            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+        go (WithName name kont) = do
+            n <- GHC.newNameAt (GHC.mkVarOcc name) l
             go (kont n)
