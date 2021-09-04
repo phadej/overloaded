@@ -21,6 +21,7 @@ module GHC.Compat.Expr (
     hsTyApp,
     hsTyApp_RDR,
     hsTyVar,
+    hsLam,
     hsPar,
     hsOpApp,
     -- * Accessors
@@ -117,6 +118,8 @@ hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
     app f x = L l (HsApp noExtField f x)
 
+
+
 hsApps_RDR :: SrcSpan -> LHsExpr GhcPs -> [LHsExpr GhcPs] -> LHsExpr GhcPs
 hsApps_RDR l = foldl' app where
     app :: LHsExpr GhcPs -> LHsExpr GhcPs -> LHsExpr GhcPs
@@ -138,6 +141,23 @@ hsTyApp_RDR l x ty = L l $ HsAppType noExtField x (HsWC noExtField (L l ty))
 #else
 hsTyApp_RDR l x ty = L l $ HsAppType (HsWC noExtField (L l ty)) x
 #endif
+
+-- | Construct simple lambda @\(pat) -> body@.
+hsLam :: SrcSpan -> LPat GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsLam l pat body = L l $ HsLam noExtField MG
+    { mg_ext    = noExtField
+    , mg_alts   = L l $ pure $ L l Match
+        { m_ext   = noExtField
+        , m_ctxt  = LambdaExpr
+        , m_pats  = [pat]
+        , m_grhss = GRHSs
+            { grhssExt        = noExtField
+            , grhssGRHSs      = [ L noSrcSpan $ GRHS noExtField [] body ]
+            , grhssLocalBinds = L noSrcSpan $ EmptyLocalBinds noExtField
+            }
+        }
+    , mg_origin = GHC.Generated
+    }
 
 hsPar :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn
 hsPar l e = L l (HsPar noExtField e)
