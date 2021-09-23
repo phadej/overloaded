@@ -17,11 +17,7 @@ import GHC.Core.FamInstEnv      as X
 import GHC.Core.Make            as X
 import GHC.Core.Predicate       as X
 import GHC.Core.TyCon           as X
-import GHC.Core.Type            as X
-import GHC.Driver.Finder        as X
 import GHC.Driver.Session       as X
-import GHC.Driver.Types         as X
-import GHC.Hs                   as X
 import GHC.Iface.Env            as X
 import GHC.Tc.Instance.Family   as X
 import GHC.Tc.Types             as X
@@ -43,6 +39,16 @@ import GHC.Utils.Outputable     as X
 import GHC     as X (Module)
 
 import qualified GHC.Core.TyCo.Rep as GHC
+
+#if MIN_VERSION_ghc(9,2,0)
+import GHC.Core.Type            as X hiding (mkFunTy)
+import GHC.Hs                   as X hiding (FunDep, AnnRec, AnnLam, AnnCase, AnnLet, AnnType)
+import GHC.Types.Fixity         as X
+#else
+import GHC.Core.Type            as X
+import GHC.Driver.Finder        as X
+import GHC.Driver.Types         as X
+#endif
 
 #else
 #if MIN_VERSION_ghc(8,10,0)

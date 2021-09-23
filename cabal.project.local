@@ -1,0 +1,36 @@
+-- with-compiler: ghc-9.2.0.20210821
+-- 
+-- allow-newer: assoc:base
+-- allow-newer: bin:base
+-- allow-newer: dec:base
+-- allow-newer: fin:base
+-- allow-newer: indexed-traversable:base
+-- allow-newer: QuickCheck:base
+-- allow-newer: QuickCheck:template-haskell
+-- allow-newer: ral:base
+-- allow-newer: singleton-bool:base
+-- allow-newer: some:base
+-- allow-newer: sop-core:base
+-- allow-newer: split:base
+-- allow-newer: splitmix:base
+-- allow-newer: universe-base:base
+-- allow-newer: vec:base
+-- 
+-- allow-newer: random:bytestring
+-- 
+-- tests: False
+-- 
+-- repository head.hackage.ghc.haskell.org
+--   url: https://ghc.gitlab.haskell.org/head.hackage/
+--   secure: True
+--   key-threshold: 3
+--   root-keys:
+--       f76d08be13e9a61a377a85e2fb63f4c5435d40f8feb3e12eb05905edb8cdea89
+--       26021a13b401500c8eb2761ca95c61f2d625bfef951b939a8124ed12ecf07329
+--       7541f32a4ccca4f97aea3b22f5e593ba2c0267546016b992dfadcd2fe944e55d
+-- 
+-- active-repositories:
+--   hackage.haskell.org,
+--   head.hackage.ghc.haskell.org:override
+-- 
+-- constraints: attoparsec ^>=0.14.1
