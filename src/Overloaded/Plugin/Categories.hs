@@ -66,7 +66,7 @@ parsePat :: LPat GhcRn -> Rewrite (SomePattern GHC.Name)
 parsePat (XPat (L l pat)) = parsePat' l pat
 parsePat pat              = parsePat' noSrcSpan pat
 #else
-parsePat (L l pat) = parsePat' l pat
+parsePat (L l pat) = parsePat' (locA l) pat
 #endif
 
 parsePat' :: SrcSpan -> Pat GhcRn -> Rewrite (SomePattern GHC.Name)
@@ -100,14 +100,14 @@ parseExpr _     ctx (L _ (HsVar _ (L l name)))
     | otherwise
     = case Map.lookup name ctx of
         Nothing -> Error $ \dflags ->
-            putError dflags l $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
+            putError dflags (locA l) $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
         Just b -> return $ ExpressionVar (B b)
-parseExpr names ctx (L _ (ExplicitTuple _ [L _ (Present _ x), L _ (Present _ y)] Plugins.Boxed)) = do
+parseExpr names ctx (L _ (ExplicitTuple _ [Present _ x, Present _ y] Plugins.Boxed)) = do
     x' <- parseExpr names ctx x
     y' <- parseExpr names ctx y
     return (ExpressionTuple x' y')
 parseExpr _     _ (L l ExplicitTuple {}) = Error $ \dflags ->
-    putError dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
+    putError dflags (locA l) $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
 parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
     | fName == conLeftName names = do
         x' <- parseExpr names ctx x
@@ -116,9 +116,9 @@ parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
         x' <- parseExpr names ctx x
         return (ExpressionRight x')
     | otherwise = Error $ \dflags ->
-        putError dflags l $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
+        putError dflags (locA l) $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
 parseExpr _     _   (L l expr) = Error $ \dflags ->
-    putError dflags l $ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
+    putError dflags (locA l)$ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
         GHC.$$ GHC.ppr expr
         GHC.$$ GHC.text (SYB.gshow expr)
 
@@ -128,7 +128,7 @@ parseCmd
     -> LHsCmd GhcRn
     -> Rewrite (Continuation (LHsExpr GhcRn) (Var b a))
 parseCmd names ctx (L _ (HsCmdDo _ (L l stmts))) =
-    parseStmts names ctx l stmts
+    parseStmts names ctx (l2l l) stmts
 parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsFirstOrderApp _)) = do
     morp' <- parseTerm names morp
     expr' <- parseExpr names ctx expr
@@ -182,16 +182,16 @@ parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
                 return $ caseCont expr' apat bpat (second assoc acont) (second assoc bcont)
 
         L l _ -> Error $ \dflags ->
-            putError dflags l $ GHC.text "Overloaded:Categories only case of Left and Right are supported"
+            putError dflags (locA l) $ GHC.text "Overloaded:Categories only case of Left and Right are supported"
                 GHC.$$ GHC.text (SYB.gshow (mg_alts matchGroup))
 parseCmd _     _   (L l cmd) =
     Error $ \dflags ->
-        putError dflags l $ GHC.text "Unsupported command in proc for Overloaded:Categories"
+        putError dflags (locA l) $ GHC.text "Unsupported command in proc for Overloaded:Categories"
             GHC.$$ GHC.ppr cmd
             GHC.$$ GHC.text (SYB.gshow cmd)
 
 simpleGRHSs :: GRHSs GhcRn body -> Maybe body
-simpleGRHSs (GRHSs _ [L _ (GRHS _ [] body)] (L _ (EmptyLocalBinds _))) = Just body
+simpleGRHSs (GRHSs _ [L _ (GRHS _ [] body)] (EmptyLocalBinds _)) = Just body
 simpleGRHSs _ = Nothing
 
 parseTerm
@@ -205,7 +205,7 @@ parseTerm _ term = return (MTerm term)
 parseStmts
     :: Names
     -> Map GHC.Name b
-    -> SrcSpan
+    -> SrcSpanAnnA
     -> [CmdLStmt GhcRn]
     -> Rewrite (Continuation (LHsExpr GhcRn) (Var b a))
 #if MIN_VERSION_ghc(9,0,1)
@@ -221,12 +221,12 @@ parseStmts names ctx _ [L _ (LastStmt _ body _ _)] =
     parseCmd names ctx body
 parseStmts _     _   _ (L l stmt : _) =
     Error $ \dflags ->
-        putError dflags l $ GHC.text "Unsupported statement in proc-do for Overloaded:Categories"
+        putError dflags (locA l) $ GHC.text "Unsupported statement in proc-do for Overloaded:Categories"
             GHC.$$ GHC.ppr stmt
             GHC.$$ GHC.text (SYB.gshow stmt)
 parseStmts _     _   l [] =
     Error $ \dflags ->
-        putError dflags l $ GHC.text "Empty do block in proc"
+        putError dflags (locA l) $ GHC.text "Empty do block in proc"
 
 -------------------------------------------------------------------------------
 -- Variables
@@ -467,15 +467,15 @@ desugarE ctx = go where
 
 generate :: Names -> Morphism (LHsExpr GhcRn) -> LHsExpr GhcRn
 generate Names {catNames = CatNames {..}} = go where
-    go MId            = hsVar noSrcSpan catIdentityName
-    go (MCompose f g) = hsPar noSrcSpan $ hsOpApp noSrcSpan (go f) (hsVar noSrcSpan catComposeName) (go g)
+    go MId            = hsVar noSrcSpanA catIdentityName
+    go (MCompose f g) = hsPar noSrcSpanA $ hsOpApp noSrcSpanA (go f) (hsVar noSrcSpanA catComposeName) (go g)
     go (MTerm term)   = term
-    go MTerminal      = hsVar noSrcSpan catTerminalName
-    go MProj1         = hsVar noSrcSpan catProj1Name
-    go MProj2         = hsVar noSrcSpan catProj2Name
-    go (MProduct f g) = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFanoutName) [go f, go g]
-    go MInL           = hsVar noSrcSpan catInlName
-    go MInR           = hsVar noSrcSpan catInrName
-    go MDistr         = hsVar noSrcSpan catDistrName
-    go MEval          = hsVar noSrcSpan catEvalName
-    go (MCase f g)    = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFaninName) [go f, go g]
+    go MTerminal      = hsVar noSrcSpanA catTerminalName
+    go MProj1         = hsVar noSrcSpanA catProj1Name
+    go MProj2         = hsVar noSrcSpanA catProj2Name
+    go (MProduct f g) = hsPar noSrcSpanA $ hsApps noSrcSpanA (hsVar noSrcSpanA catFanoutName) [go f, go g]
+    go MInL           = hsVar noSrcSpanA catInlName
+    go MInR           = hsVar noSrcSpanA catInrName
+    go MDistr         = hsVar noSrcSpanA catDistrName
+    go MEval          = hsVar noSrcSpanA catEvalName
+    go (MCase f g)    = hsPar noSrcSpanA $ hsApps noSrcSpanA (hsVar noSrcSpanA catFaninName) [go f, go g]

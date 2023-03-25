@@ -16,6 +16,7 @@ module GHC.Compat.Expr (
     HsLocalBindsLR (..),
     -- ** Constructors
     hsVar,
+    hsVarA,
     hsApps,
     hsApps_RDR,
     hsTyApp,
@@ -64,12 +65,19 @@ module GHC.Compat.Expr (
     Located,
     GenLocated (..),
     SrcSpan (..),
+    SrcSpanAnnA,
+    SrcSpanAnnN,
     RealSrcSpan,
+    l2l,
+    locA,
+    noAnn,
+    noAnnSrcSpan,
     noSrcSpan,
-    srcSpanStartLine,
+    noSrcSpanA,
+    srcSpanEndCol,
     srcSpanEndLine,
     srcSpanStartCol,
-    srcSpanEndCol,
+    srcSpanStartLine,
     -- * Extensions
     noExtField,
     -- * Names
@@ -107,60 +115,65 @@ noExtField  :: NoExt
 noExtField = noExt
 #endif
 
-hsVar :: SrcSpan -> GHC.Name -> LHsExpr GhcRn
-hsVar l n = L l (HsVar noExtField (L l n))
+-- | preserves NamenAnn
+hsVar :: SrcSpanAnnN -> GHC.Name -> LHsExpr GhcRn
+hsVar l n = L (l2l l) (HsVar noExtField (L l n))
 
-hsTyVar :: SrcSpan -> GHC.Name -> HsType GhcRn
-hsTyVar l n = HsTyVar noExtField NotPromoted (L l n)
+-- | preserves AnnListItem
+hsVarA :: SrcSpanAnnA -> GHC.Name -> LHsExpr GhcRn
+hsVarA l n = L l (HsVar noExtField (L (l2l l) n))
 
-hsApps :: SrcSpan -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
+hsTyVar :: SrcSpanAnnN -> GHC.Name -> HsType GhcRn
+hsTyVar l n = HsTyVar noAnn NotPromoted (L l n)
+
+hsApps :: SrcSpanAnnA -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
 hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
-    app f x = L l (HsApp noExtField f x)
+    app f x = L l (HsApp noAnn f x)
 
 
 
-hsApps_RDR :: SrcSpan -> LHsExpr GhcPs -> [LHsExpr GhcPs] -> LHsExpr GhcPs
+hsApps_RDR :: SrcSpanAnnA -> LHsExpr GhcPs -> [LHsExpr GhcPs] -> LHsExpr GhcPs
 hsApps_RDR l = foldl' app where
     app :: LHsExpr GhcPs -> LHsExpr GhcPs -> LHsExpr GhcPs
-    app f x = L l (HsApp noExtField f x)
+    app f x = L l (HsApp noAnn f x)
 
-hsOpApp :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsOpApp :: SrcSpanAnnA -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 hsOpApp l x op y = L l (OpApp GHC.defaultFixity x op y)
 
-hsTyApp :: SrcSpan -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
+hsTyApp :: SrcSpanAnnA -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
 #if MIN_VERSION_ghc(8,8,0)
 hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
 #else
 hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
 #endif
 
-hsTyApp_RDR :: SrcSpan -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
+hsTyApp_RDR :: SrcSpanAnnA -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
 #if MIN_VERSION_ghc(8,8,0)
-hsTyApp_RDR l x ty = L l $ HsAppType noExtField x (HsWC noExtField (L l ty))
+hsTyApp_RDR l x ty = L l $ HsAppType noSrcSpan x (HsWC noExtField (L l ty))
 #else
 hsTyApp_RDR l x ty = L l $ HsAppType (HsWC noExtField (L l ty)) x
 #endif
 
 -- | Construct simple lambda @\(pat) -> body@.
-hsLam :: SrcSpan -> LPat GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsLam :: SrcSpanAnnA -> LPat GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 hsLam l pat body = L l $ HsLam noExtField MG
     { mg_ext    = noExtField
-    , mg_alts   = L l $ pure $ L l Match
-        { m_ext   = noExtField
+    , mg_alts   = L (l2l l) $ pure $ L l Match
+        { m_ext   = noAnn
         , m_ctxt  = LambdaExpr
         , m_pats  = [pat]
         , m_grhss = GRHSs
-            { grhssExt        = noExtField
-            , grhssGRHSs      = [ L noSrcSpan $ GRHS noExtField [] body ]
-            , grhssLocalBinds = L noSrcSpan $ EmptyLocalBinds noExtField
+            { grhssExt        = emptyComments
+            , grhssGRHSs      = [ L noSrcSpan $ GRHS noAnn [] body ]
+            , grhssLocalBinds = EmptyLocalBinds noExtField
             }
         }
     , mg_origin = GHC.Generated
     }
 
-hsPar :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn
-hsPar l e = L l (HsPar noExtField e)
+hsPar :: SrcSpanAnnA -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsPar l e = L l (HsPar noAnn e)
 
 nameToString :: GHC.Name -> String
 nameToString = GHC.occNameString . GHC.occName

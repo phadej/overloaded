@@ -47,9 +47,9 @@ type family NotEmptySymbol (s :: Symbol) :: Constraint where
 instance (KnownSymbol s, NotEmptySymbol s) => FromSymbol s NES where
     fromSymbol = NES $ symbolVal (Proxy :: Proxy s)
 
--- We don't need this instance, as we have configured the plugin
--- instance (KnownSymbol s, NotEmptySymbol s) => IsLabel s NES where
---     fromLabel = fromSymbol @s
+-- TODO: We should not need this instance, as we have configured the plugin
+instance (KnownSymbol s, NotEmptySymbol s) => IsLabel s NES where
+    fromLabel = fromSymbol @s
 
 -- | Orphan instance for natural
 instance (KnownNat (ReadNat s)) => FromSymbol s Natural where

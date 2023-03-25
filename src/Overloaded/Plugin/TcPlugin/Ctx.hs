@@ -29,8 +29,8 @@ tcPluginInit = do
             case im of
                 GHC.Found _ md -> return md
                 _              -> do
-                    Plugins.tcPluginIO $ putError dflags noSrcSpan  $
-                        GHC.text "Cannot find module" GHC.<+> GHC.ppr m 
+                    tcError dflags noSrcSpan  $
+                        GHC.text "Cannot find module" GHC.<+> GHC.ppr m
                     fail "panic!"
 
     hasPolyFieldCls <- do

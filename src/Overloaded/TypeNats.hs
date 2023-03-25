@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds    #-}
 {-# LANGUAGE PolyKinds    #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 -- | Overloaded type-level natural numbers.
 module Overloaded.TypeNats where
 

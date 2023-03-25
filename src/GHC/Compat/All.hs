@@ -42,8 +42,14 @@ import qualified GHC.Core.TyCo.Rep as GHC
 
 #if MIN_VERSION_ghc(9,2,0)
 import GHC.Core.Type            as X hiding (mkFunTy)
+import GHC.Driver.Env.Types     as X
+import GHC.Driver.Monad         as X
+import GHC.Driver.Ppr           as X
 import GHC.Hs                   as X hiding (FunDep, AnnRec, AnnLam, AnnCase, AnnLet, AnnType)
 import GHC.Types.Fixity         as X
+import GHC.Types.SourceText     as X
+import GHC.Unit.Finder          as X
+import GHC.Utils.Logger         as X
 #else
 import GHC.Core.Type            as X
 import GHC.Driver.Finder        as X
