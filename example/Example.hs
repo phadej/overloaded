@@ -9,9 +9,9 @@
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module Main (main) where
 
@@ -27,7 +27,9 @@ import qualified Data.Type.Nat          as N
 import           Data.Vec.Lazy          (Vec (..))
 import           GHC.Exts               (Constraint)
 import           GHC.OverloadedLabels   (IsLabel (..))
-import           GHC.TypeLits           (ErrorMessage (..), TypeError, KnownSymbol, KnownNat, symbolVal, Symbol)
+import           GHC.TypeLits
+                 (ErrorMessage (..), KnownNat, KnownSymbol, Symbol, TypeError,
+                 symbolVal)
 import qualified GHC.TypeNats           as Nat
 import           Numeric.Natural
 import           Test.HUnit             ((@?=))
