@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Overloaded.Plugin.HasField where
 
 import Control.Monad (forM, unless)
@@ -8,11 +9,7 @@ import Data.Maybe    (mapMaybe)
 
 import qualified GHC.Compat.All  as GHC
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Tc.Plugin as Plugins
-#else
-import qualified TcPluginM as Plugins
-#endif
 
 import Overloaded.Plugin.V
 import Overloaded.Plugin.TcPlugin.Ctx
@@ -78,7 +75,7 @@ solveHasField PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
                     ]
 
             -- DC x0 x1 x2 -> (\b -> DC b x1 x2, x0)
-            let caseBranch = (GHC.DataAlt dc, exist' ++ theta' ++ xs', rhs)
+            let caseBranch = GHC.Alt (GHC.DataAlt dc) (exist' ++ theta' ++ xs') rhs
 
             -- GHC.tcPluginIO $ warn dflags l $
             --     GHC.text "cases"

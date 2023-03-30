@@ -9,9 +9,9 @@
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module Main (main) where
 
@@ -27,7 +27,9 @@ import qualified Data.Type.Nat          as N
 import           Data.Vec.Lazy          (Vec (..))
 import           GHC.Exts               (Constraint)
 import           GHC.OverloadedLabels   (IsLabel (..))
-import           GHC.TypeLits           (ErrorMessage (..), TypeError, KnownSymbol, KnownNat, symbolVal, Symbol)
+import           GHC.TypeLits
+                 (ErrorMessage (..), KnownNat, KnownSymbol, Symbol, TypeError,
+                 symbolVal)
 import qualified GHC.TypeNats           as Nat
 import           Numeric.Natural
 import           Test.HUnit             ((@?=))
@@ -47,9 +49,9 @@ type family NotEmptySymbol (s :: Symbol) :: Constraint where
 instance (KnownSymbol s, NotEmptySymbol s) => FromSymbol s NES where
     fromSymbol = NES $ symbolVal (Proxy :: Proxy s)
 
--- We don't need this instance, as we have configured the plugin
--- instance (KnownSymbol s, NotEmptySymbol s) => IsLabel s NES where
---     fromLabel = fromSymbol @s
+-- TODO: We should not need this instance, as we have configured the plugin
+instance (KnownSymbol s, NotEmptySymbol s) => IsLabel s NES where
+    fromLabel = fromSymbol @s
 
 -- | Orphan instance for natural
 instance (KnownNat (ReadNat s)) => FromSymbol s Natural where

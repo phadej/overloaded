@@ -17,11 +17,7 @@ import qualified Data.Generics as SYB
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Plugins as Plugins
-#else
-import qualified GhcPlugins as Plugins
-#endif
 
 import Overloaded.Plugin.Categories
 import Overloaded.Plugin.Diagnostics
@@ -325,10 +321,10 @@ renamedAction args' env gr = do
 parsedAction
     :: [Plugins.CommandLineOption]
     -> Plugins.ModSummary
-    -> Plugins.HsParsedModule
-    -> Plugins.Hsc Plugins.HsParsedModule
+    -> GHC.HsParsedModule
+    -> Plugins.Hsc GHC.HsParsedModule
 parsedAction args _modSum pm = do
-    let hsmodule = Plugins.hpm_module pm
+    let hsmodule = GHC.hpm_module pm
     topEnv <- GHC.Hsc $ \env warnMsgs -> return (env, warnMsgs)
 
     dflags <- GHC.getDynFlags
@@ -362,7 +358,7 @@ parsedAction args _modSum pm = do
             ]
 
     hsmodule' <- transformPs dflags tr hsmodule
-    let pm' = pm { Plugins.hpm_module = hsmodule' }
+    let pm' = pm { GHC.hpm_module = hsmodule' }
 
     return pm'
 
@@ -370,7 +366,7 @@ parsedAction args _modSum pm = do
 -- Args parsing
 -------------------------------------------------------------------------------
 
-parseArgs :: forall m. MonadIO m => GHC.DynFlags -> [String] -> m Options
+parseArgs :: forall m. (MonadIO m, GHC.HasLogger m) => GHC.DynFlags -> [String] -> m Options
 parseArgs dflags = foldM go0 defaultOptions where
     ambWarn :: String -> String -> m ()
     ambWarn x y = warn dflags noSrcSpan $
@@ -590,7 +586,7 @@ data OnOff a
 
 transformStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) =
-    Rewrite $ hsApps l (hsVar l fromStringName) [e]
+    Rewrite $ hsApps l (hsVarA l fromStringName) [e]
 
 transformStrings _ _ = NoRewrite
 
@@ -600,7 +596,7 @@ transformStrings _ _ = NoRewrite
 
 transformSymbols :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformSymbols Names {..} (L l (HsLit _ (HsString _ fs))) = do
-    let name' = hsVar l fromSymbolName
+    let name' = hsVarA l fromSymbolName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     Rewrite inner
 
@@ -612,8 +608,8 @@ transformSymbols _ _ = NoRewrite
 
 transformCodeStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformCodeStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) = do
-    let inner = hsApps l (hsVar l codeFromStringName) [e]
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
+    let inner = hsApps l (hsVarA l codeFromStringName) [e]
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noAnn $ HsTypedSplice noAnn hasParens n inner
 
 transformCodeStrings _ _ = NoRewrite
 
@@ -624,7 +620,7 @@ transformCodeStrings _ _ = NoRewrite
 transformNumerals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
     | not n, i >= 0 = do
-        let name' = hsVar l fromNumeralName
+        let name' = hsVarA l fromNumeralName
         let inner = hsTyApp l name' (HsTyLit noExtField (HsNumTy GHC.NoSourceText i))
         Rewrite inner
 
@@ -638,7 +634,7 @@ transformNaturals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformNaturals Names {..} e@(L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
     | not n
     , i >= 0
-    = Rewrite $ hsApps l (hsVar l fromNaturalName) [e]
+    = Rewrite $ hsApps l (hsVarA l fromNaturalName) [e]
 
 transformNaturals _ _ = NoRewrite
 
@@ -648,7 +644,7 @@ transformNaturals _ _ = NoRewrite
 
 transformChars :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformChars Names {..} e@(L l (HsLit _ (HsChar _ _))) =
-    Rewrite $ hsApps l (hsVar l fromCharName) [e]
+    Rewrite $ hsApps l (hsVarA l fromCharName) [e]
 
 transformChars _ _ = NoRewrite
 
@@ -657,14 +653,14 @@ transformChars _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformLists :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-transformLists Names {..} (L l (ExplicitList _ Nothing xs)) =
+transformLists Names {..} (L l (ExplicitList _  xs)) =
     Rewrite $ foldr cons' nil' xs
   where
     cons' :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
-    cons' y ys = hsApps l (hsVar l consName) [y, ys]
+    cons' y ys = hsApps l (hsVarA l consName) [y, ys]
 
     nil' :: LHsExpr GhcRn
-    nil' = hsVar l nilName
+    nil' = hsVarA l nilName
 
     -- otherwise: leave intact
 transformLists _ _ = NoRewrite
@@ -674,15 +670,11 @@ transformLists _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformIf :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-#if MIN_VERSION_ghc(9,0,0)
 transformIf Names {..} (L l (HsIf _ co th el)) = Rewrite val4 where
-#else
-transformIf Names {..} (L l (HsIf _ _ co th el)) = Rewrite val4 where
-#endif
-    val4 = L l $ HsApp noExtField val3 el
-    val3 = L l $ HsApp noExtField val2 th
-    val2 = L l $ HsApp noExtField val1 co
-    val1 = L l $ HsVar noExtField $ L l ifteName
+    val4 = L l $ HsApp noAnn val3 el
+    val3 = L l $ HsApp noAnn val2 th
+    val2 = L l $ HsApp noAnn val1 co
+    val1 = L l $ HsVar noExtField $ L (l2l l) ifteName
 transformIf _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
@@ -690,8 +682,8 @@ transformIf _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
-    let name' = hsVar l fromLabelName
+transformLabels Names {..} (L l (HsOverLabel _ fs)) = do
+    let name' = hsVarA l fromLabelName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     Rewrite inner
 
@@ -702,18 +694,14 @@ transformLabels _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 hasParens :: SpliceDecoration
-#if MIN_VERSION_ghc(9,0,0)
 hasParens = DollarSplice
-#else
-hasParens = HasParens
-#endif
 
 transformCodeLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-transformCodeLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
-    let name' = hsVar l codeFromLabelName
+transformCodeLabels Names {..} (L l (HsOverLabel _ fs)) = do
+    let name' = hsVarA l codeFromLabelName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     -- Rewrite $ L l $ HsRnBracketOut noExtField (ExpBr noExtField inner) []
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noAnn $ HsTypedSplice noAnn hasParens n inner
 
 transformCodeLabels _ _ = NoRewrite
 
@@ -723,7 +711,7 @@ transformCodeLabels _ _ = NoRewrite
 
 transformUnit :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformUnit Names {..} (L l (HsVar _ (L _ name')))
-    | name' == ghcUnitName = Rewrite (hsVar l unitName)
+    | name' == ghcUnitName = Rewrite (hsVarA l unitName)
   where
     ghcUnitName = GHC.getName (GHC.tupleDataCon GHC.Boxed 0)
 
@@ -735,7 +723,7 @@ transformUnit _ _ = NoRewrite
 
 transformTypeNats :: Names -> LHsType GhcRn -> Rewrite (LHsType GhcRn)
 transformTypeNats Names {..} e@(L l (HsTyLit _ (HsNumTy _ _))) = do
-    let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeNatName
+    let name' = L l $ HsTyVar noAnn NotPromoted $ L (l2l l) fromTypeNatName
     Rewrite $ L l $ HsAppTy noExtField name' e
 transformTypeNats _ _ = NoRewrite
 
@@ -745,7 +733,7 @@ transformTypeNats _ _ = NoRewrite
 
 transformTypeSymbols :: Names -> LHsType GhcRn -> Rewrite (LHsType GhcRn)
 transformTypeSymbols Names {..} e@(L l (HsTyLit _ (HsStrTy _ _))) = do
-    let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeSymbolName
+    let name' = L l $ HsTyVar noAnn NotPromoted $ L (l2l l) fromTypeSymbolName
     Rewrite $ L l $ HsAppTy noExtField name' e
 transformTypeSymbols _ _ = NoRewrite
 
@@ -756,10 +744,10 @@ transformTypeSymbols _ _ = NoRewrite
 transformRebindableApplication :: RdrNames -> LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs)
 transformRebindableApplication RdrNames {..} (L l (HsApp _ f@(L fl _) x@(L xl _)))
     = Rewrite
-    $ L l $ HsPar noExtField
-    $ L l $ OpApp noExtField f (L l' (HsVar noExtField (L l' dollarName))) x
+    $ L l $ HsPar noAnn
+    $ L l $ OpApp noAnn f (L l' (HsVar noExtField (L l' dollarName))) x
   where
-    l' = GHC.mkSrcSpan (GHC.srcSpanEnd fl) (GHC.srcSpanStart xl)
+    l' = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA fl) (GHC.srcSpanStart $ locA xl)
 transformRebindableApplication _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
@@ -774,13 +762,13 @@ transformConstructors RdrNames {..} (L l (SectionR _ (L lop (HsVar _ (L _ op))) 
   where
     expr n args = hsApps_RDR l
         (hsTyApp_RDR l
-            (L lop (HsVar noExtField (L lop buildName)))
+            (L lop (HsVar noExtField (L (l2l lop) buildName)))
             (HsTyLit noExtField (HsStrTy GHC.NoSourceText (Plugins.occNameFS (GHC.rdrNameOcc n)))))
         [ args' ]
       where
         args' = case args of
             [x] -> x
-            _   -> L l (ExplicitTuple noExtField [ L l' (Present noExtField x) | x@(L l' _) <- args ] Plugins.Boxed)
+            _   -> L l (ExplicitTuple noAnn [ Present noAnn x | x <- args ] Plugins.Boxed)
 
 transformConstructors _ _ = NoRewrite
 
@@ -813,22 +801,17 @@ transformRn dflags f = SYB.everywhereM (SYB.mkM transform') where
         go NoRewrite    = return e
         go (Rewrite e') = return e'
         go (Error err)  = do
-            liftIO $ err dflags
+            err dflags
             fail "Error in Overloaded plugin"
         go (WithName kont) = do
-            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") $ locA l
             go (kont n)
 
 transformPs
     :: GHC.DynFlags
     -> (LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs))
-#if MIN_VERSION_ghc(9,0,0)
     -> Located HsModule
     -> Plugins.Hsc (Located HsModule)
-#else
-    -> Located (HsModule GhcPs)
-    -> Plugins.Hsc (Located (HsModule GhcPs))
-#endif
 transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
     transform' e@(L _l _) = do
@@ -839,7 +822,7 @@ transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
         go NoRewrite    = return e
         go (Rewrite e') = return e'
         go (Error err)  = do
-            liftIO $ err dflags
+            err dflags
             -- Hsc doesn't have MonadFail instance
             liftIO $ throwIO $ userError "Error in Overloaded plugin"
         go (WithName _kont) = do
@@ -857,8 +840,8 @@ transformType dflags f = SYB.everywhereM (SYB.mkM transform') where
         go NoRewrite    = return e
         go (Rewrite e') = return e'
         go (Error err)  = do
-            liftIO $ err dflags
+            err dflags
             fail "Error in Overloaded plugin"
         go (WithName kont) = do
-            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") $ locA l
             go (kont n)

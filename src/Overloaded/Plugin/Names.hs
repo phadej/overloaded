@@ -137,14 +137,14 @@ getCatNames dflags env module_ = do
 
     return CatNames {..}
 
-lookupName :: MonadIO m => GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> m GHC.Name
-lookupName dflags env mn vn = liftIO $ do
-    res <- GHC.findImportedModule env mn Nothing
+lookupName :: (GHC.HasLogger m, MonadIO m) => GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> m GHC.Name
+lookupName dflags env mn vn = do
+    res <- liftIO $ GHC.findImportedModule env mn Nothing
     case res of
-        GHC.Found _ md -> GHC.lookupOrigIO env md (GHC.mkVarOcc vn)
+        GHC.Found _ md -> liftIO $ GHC.lookupOrigIO env md (GHC.mkVarOcc vn)
         _              -> do
             putError dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
-            fail "panic!"
+            liftIO $ fail "panic!"
 
 lookupNameDataCon :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
 lookupNameDataCon dflags env mn vn = do

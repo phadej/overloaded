@@ -38,7 +38,7 @@ transformIdiomBrackets' names expr = do
 -- | Match nested function applications, 'HsApp':
 -- f x y z ~> f :| [x,y,z]
 --
-matchApp :: LHsExpr p -> NonEmpty (LHsExpr p)
+matchApp :: LHsExpr GhcRn -> NonEmpty (LHsExpr GhcRn)
 matchApp (L _ (HsApp _ f x)) = neSnoc (matchApp f) x
 matchApp e = pure e
 
@@ -51,7 +51,7 @@ neSnoc (x :| xs) y = x :| xs ++ [y]
 
 -- | Match nested operator applications, 'OpApp'.
 -- x + y * z ~>  Branch (+) (Leaf x) (Branch (*) (Leaf y) (Leaf z))
-matchOp :: LHsExpr p -> BT (LHsExpr p)
+matchOp :: LHsExpr GhcRn -> BT (LHsExpr GhcRn)
 matchOp (L _ (OpApp _  lhs op rhs)) = Branch (matchOp lhs) op (matchOp rhs)
 matchOp x = Leaf x
 
@@ -76,16 +76,16 @@ applyExpr names f x               = apExpr names f x
 
 apExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 apExpr Names {..} f x = hsApps l' (hsVar l' apName) [f, x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA
 
 birdExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 birdExpr Names {..} f x = hsApps l' (hsVar l' birdName) [f, x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA
 
 fmapExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 fmapExpr Names {..} f x = hsApps l' (hsVar l' fmapName) [f, x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA
 
 pureExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn
 pureExpr Names {..} x = hsApps l' (hsVar l' pureName) [x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA

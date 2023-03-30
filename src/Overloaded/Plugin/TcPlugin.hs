@@ -8,11 +8,7 @@ import Data.Maybe    (mapMaybe)
 
 import qualified GHC.Compat.All  as GHC
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Tc.Plugin as Plugins
-#else
-import qualified TcPluginM as Plugins
-#endif
 
 import Overloaded.Plugin.TcPlugin.Ctx
 import Overloaded.Plugin.HasField
