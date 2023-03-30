@@ -10,24 +10,14 @@ import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.Names
 import Overloaded.Plugin.Rewrite
 
-#if MIN_VERSION_ghc(9,0,0)
-#define _bufspan _
-#else
-#define _bufspan
-#endif
-
 transformDo
     :: Names
     -> LHsExpr GhcRn
     -> Rewrite (LHsExpr GhcRn)
-transformDo names (L l (OpApp _ (L (GHC.SrcSpanAnn _ (RealSrcSpan l1 _bufspan)) (HsVar _ (L _ doName)))
-                                (L (GHC.SrcSpanAnn _ (RealSrcSpan l2 _bufspan)) (HsVar _ (L _ compName')))
-                                (L (GHC.SrcSpanAnn _ (RealSrcSpan l3 _bufspan))
-#if MIN_VERSION_ghc(9,0,0)
+transformDo names (L l (OpApp _ (L (GHC.SrcSpanAnn _ (RealSrcSpan l1 _)) (HsVar _ (L _ doName)))
+                                (L (GHC.SrcSpanAnn _ (RealSrcSpan l2 _)) (HsVar _ (L _ compName')))
+                                (L (GHC.SrcSpanAnn _ (RealSrcSpan l3 _))
                                    (HsDo _ (DoExpr Nothing) (L _ stmts))
-#else
-                                   (HsDo _ DoExpr (L _ stmts))
-#endif
                                    )))
     | spanNextTo l1 l2
     , spanNextTo l2 l3
@@ -40,11 +30,7 @@ transformDo _ _ = NoRewrite
 transformDo' :: Names -> GHC.Name -> SrcSpanAnnA -> [ExprLStmt GhcRn] -> Either (GHC.DynFlags -> GhcDiagMonadWrapper ()) (LHsExpr GhcRn)
 transformDo' _names _doName l [] = Left $ \dflags ->
     GhcDiagMonadWrapper $ putError dflags (locA l) $ GHC.text "Empty do"
-#if MIN_VERSION_ghc(9,0,0)
 transformDo'  names  doName _ (L l (BindStmt _ pat body) : next) = do
-#else
-transformDo'  names  doName _ (L l (BindStmt _ pat body _ _) : next) = do
-#endif
     next' <- transformDo' names doName l next
     return $ hsApps l bind [ body, kont next' ]
   where

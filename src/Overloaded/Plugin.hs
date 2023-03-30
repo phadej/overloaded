@@ -17,11 +17,7 @@ import qualified Data.Generics as SYB
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Plugins as Plugins
-#else
-import qualified GhcPlugins as Plugins
-#endif
 
 import Overloaded.Plugin.Categories
 import Overloaded.Plugin.Diagnostics
@@ -674,11 +670,7 @@ transformLists _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformIf :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-#if MIN_VERSION_ghc(9,0,0)
 transformIf Names {..} (L l (HsIf _ co th el)) = Rewrite val4 where
-#else
-transformIf Names {..} (L l (HsIf _ _ co th el)) = Rewrite val4 where
-#endif
     val4 = L l $ HsApp noAnn val3 el
     val3 = L l $ HsApp noAnn val2 th
     val2 = L l $ HsApp noAnn val1 co
@@ -702,11 +694,7 @@ transformLabels _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 hasParens :: SpliceDecoration
-#if MIN_VERSION_ghc(9,0,0)
 hasParens = DollarSplice
-#else
-hasParens = HasParens
-#endif
 
 transformCodeLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformCodeLabels Names {..} (L l (HsOverLabel _ fs)) = do
@@ -822,13 +810,8 @@ transformRn dflags f = SYB.everywhereM (SYB.mkM transform') where
 transformPs
     :: GHC.DynFlags
     -> (LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs))
-#if MIN_VERSION_ghc(9,0,0)
     -> Located HsModule
     -> Plugins.Hsc (Located HsModule)
-#else
-    -> Located (HsModule GhcPs)
-    -> Plugins.Hsc (Located (HsModule GhcPs))
-#endif
 transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
     transform' :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
     transform' e@(L _l _) = do

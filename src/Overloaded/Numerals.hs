@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
@@ -24,7 +24,7 @@ import Data.Proxy      (Proxy (..))
 import Data.Word       (Word16, Word32, Word64, Word8)
 import GHC.Exts        (Constraint)
 import GHC.TypeLits    (ErrorMessage (..), Symbol, TypeError)
-import GHC.TypeNats    (type (<=?), KnownNat, Nat, natVal)
+import GHC.TypeNats    (KnownNat, Nat, natVal, type (<=?))
 import Numeric.Natural (Natural)
 
 import qualified Data.Bin       as B

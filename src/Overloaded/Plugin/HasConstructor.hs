@@ -8,11 +8,7 @@ import Data.Maybe    (mapMaybe)
 
 import qualified GHC.Compat.All  as GHC
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Tc.Plugin as Plugins
-#else
-import qualified TcPluginM as Plugins
-#endif
 
 import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.TcPlugin.Ctx
@@ -39,9 +35,7 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
             -- get location
             let ctloc = GHC.ctLoc ct
             let l = GHC.RealSrcSpan (GHC.ctLocSpan ctloc)
-#if MIN_VERSION_ghc(9,0,0)
                         Nothing
-#endif
             ifDebug $ tcWarn dflags l $
                 GHC.text "DEBUG1"
                     GHC.$$ GHC.ppr tc

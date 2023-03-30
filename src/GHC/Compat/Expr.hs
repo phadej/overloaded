@@ -50,11 +50,7 @@ module GHC.Compat.Expr (
     HsType (..),
     LHsType,
     HsWildCardBndrs (..),
-#if MIN_VERSION_ghc(8,8,0)
     PromotionFlag (..),
-#else
-    Promoted (..),
-#endif
     -- * Statements
     HsGroup,
     HsModule,
@@ -84,36 +80,16 @@ module GHC.Compat.Expr (
     nameToString,
 ) where
 
-#if MIN_VERSION_ghc(8,10,0)
 import GHC.Hs
-#else
-import HsSyn
-#endif
-
-#if MIN_VERSION_ghc(9,0,0)
 import GHC.Types.Basic (PromotionFlag (..))
-#elif MIN_VERSION_ghc(8,8,0)
-import BasicTypes (PromotionFlag (..))
-#endif
 
-#if MIN_VERSION_ghc(9,0,0)
 import GHC.Types.SrcLoc
        (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
        srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
-#else
-import SrcLoc
-       (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
-       srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
-#endif
 
 import Data.List (foldl')
 
 import qualified GHC.Compat.All as GHC
-
-#if !(MIN_VERSION_ghc(8,10,0))
-noExtField  :: NoExt
-noExtField = noExt
-#endif
 
 -- | preserves NamenAnn
 hsVar :: SrcSpanAnnN -> GHC.Name -> LHsExpr GhcRn
@@ -142,18 +118,10 @@ hsOpApp :: SrcSpanAnnA -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHs
 hsOpApp l x op y = L l (OpApp GHC.defaultFixity x op y)
 
 hsTyApp :: SrcSpanAnnA -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
-#if MIN_VERSION_ghc(8,8,0)
 hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
-#else
-hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
-#endif
 
 hsTyApp_RDR :: SrcSpanAnnA -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
-#if MIN_VERSION_ghc(8,8,0)
 hsTyApp_RDR l x ty = L l $ HsAppType noSrcSpan x (HsWC noExtField (L l ty))
-#else
-hsTyApp_RDR l x ty = L l $ HsAppType (HsWC noExtField (L l ty)) x
-#endif
 
 -- | Construct simple lambda @\(pat) -> body@.
 hsLam :: SrcSpanAnnA -> LPat GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn

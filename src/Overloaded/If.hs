@@ -4,8 +4,8 @@ module Overloaded.If (
     ifte,
     ) where
 
-import Data.Maybe (isJust)
 import Data.Either (isRight)
+import Data.Maybe  (isJust)
 
 -- | Class for 'Bool'-like datastrucutres
 --
