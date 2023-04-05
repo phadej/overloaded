@@ -47,6 +47,8 @@ library
     Overloaded.Naturals
     Overloaded.Numerals
     Overloaded.Plugin
+    Overloaded.RebindableApplication
+    Overloaded.RebindableAbstraction
     Overloaded.Symbols
     Overloaded.TypeNats
     Overloaded.TypeSymbols
@@ -181,6 +183,17 @@ test-suite example-local-do
     , base
     , overloaded
 
+test-suite example-edsl
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   example
+  main-is:          EDSL.hs
+
+  -- inherited dependencies
+  build-depends:
+    , base
+    , overloaded
+
 test-suite example-ad
   default-language: Haskell2010
   type:             exitcode-stdio-1.0
@@ -228,6 +241,7 @@ test-suite test
     Overloaded.Test.Lists.Bidi
     Overloaded.Test.Naturals
     Overloaded.Test.Numerals
+    Overloaded.Test.RebindableAbstraction
     Overloaded.Test.RebindableApplications
     Overloaded.Test.RecordFields
     Overloaded.Test.Strings

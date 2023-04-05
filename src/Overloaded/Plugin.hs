@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Overloaded plugin, which makes magic possible.
@@ -345,6 +347,13 @@ parsedAction args _modSum pm = do
             let n = mkRdrName rn
             return $ transformRebindableApplication $ names { dollarName = n }
 
+    trRebindAbstr <- case optRebindAbstr of
+        Off -> return transformNoOp
+        On Nothing  -> return $ transformRebindableAbstraction names
+        On (Just rn) -> do
+            let n = mkRdrName rn
+            return $ transformRebindableAbstraction names { lamName = n }
+
     trConstructors <- case optConstructors of
         Off -> return transformNoOp
         On Nothing -> return $ transformConstructors names
@@ -354,6 +363,7 @@ parsedAction args _modSum pm = do
 
     let tr  = mconcat
             [ trRebindApp
+            , trRebindAbstr
             , trConstructors
             ]
 
@@ -451,6 +461,9 @@ parseArgs dflags = foldM go0 defaultOptions where
     go opts "RebindableApplication" vns = do
         mrn <- oneName "RebindableApplication" vns
         return $ opts { optRebindApp = On mrn }
+    go opts "RebindableAbstraction" vns = do
+        mrn <- oneName "RebindableAbstraction" vns
+        return $ opts { optRebindAbstr = On mrn }
     go opts "Constructors" vns = do
         mrn <- oneName "Constructors" vns
         return $ opts { optConstructors = On mrn }
@@ -505,6 +518,7 @@ data Options = Options
     , optDo            :: Bool
     , optCategories    :: OnOff String -- module name
     , optRebindApp     :: OnOff VarName
+    , optRebindAbstr   :: OnOff VarName
     , optConstructors  :: OnOff VarName
     }
   deriving (Eq, Show)
@@ -525,6 +539,7 @@ defaultOptions = Options
     , optDo            = False
     , optCategories    = Off
     , optRebindApp     = Off
+    , optRebindAbstr   = Off
     , optConstructors  = Off
     }
 
@@ -748,7 +763,70 @@ transformRebindableApplication RdrNames {..} (L l (HsApp _ f@(L fl _) x@(L xl _)
     $ L l $ OpApp noAnn f (L l' (HsVar noExtField (L l' dollarName))) x
   where
     l' = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA fl) (GHC.srcSpanStart $ locA xl)
+transformRebindableApplication RdrNames {..} (L l (OpApp _ x@(L xl _) f@(L _fl fEx) y@(L yl _)))
+    = case fEx of
+        HsVar _ (L _ fName) | fName == dollarName -> NoRewrite
+        _ -> Rewrite
+            $ L l $ HsPar noAnn
+            $ L l (HsPar noAnn $ f `app` x) `app` y
+  where
+    l' = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA xl) (GHC.srcSpanStart $ locA yl)
+    app :: LHsExpr GhcPs -> LHsExpr GhcPs -> LHsExpr GhcPs
+    app fun a = L l $ OpApp noAnn fun (L l' (HsVar noExtField (L l' dollarName))) a
 transformRebindableApplication _ _ = NoRewrite
+
+-------------------------------------------------------------------------------
+-- RebindableAbstraction
+-------------------------------------------------------------------------------
+
+-- lam2 :: (Lam f a f', Lam f' b c) => (a -> b -> c) -> f
+-- lam2 f = lam $ \a -> lamRec (f a)
+
+pointSpan :: GHC.SrcSpanAnn' a -> GHC.SrcAnn ann
+pointSpan l = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA l) (GHC.srcSpanStart $ locA l)
+
+-- | Applies 'lam' to lambdas of any arity
+deepLam ::
+  Plugins.RdrName ->
+  Plugins.RdrName ->
+  GHC.SrcSpanAnn' (GHC.EpAnn GHC.AnnListItem) ->
+  LHsExpr GhcPs ->
+  Int ->
+  LHsExpr GhcPs
+deepLam lamName composeRdrName l f = go
+    where
+        go = \case
+            1 -> appName lamName f
+            n | n > 1 ->
+                appName lamName
+                $ L l $ HsPar noAnn
+                $ L l $ OpApp noAnn
+                  (go $ n - 1)
+                  (L (pointSpan l) $ HsVar noExtField (L (pointSpan l) composeRdrName))
+                  f
+            _ -> error "deepLam invalid depth"
+        appName :: Plugins.RdrName -> LHsExpr GhcPs -> LHsExpr GhcPs
+        appName name arg =
+            L l $ HsPar noAnn
+            $ L l $ HsApp noAnn (L (pointSpan l) (HsVar noExtField (L (pointSpan l) name))) (L l $ HsPar noAnn arg)
+
+transformRebindableAbstraction
+    :: RdrNames
+    -> LHsExpr GhcPs
+    -> Rewrite (LHsExpr GhcPs)
+transformRebindableAbstraction RdrNames {..} lam@(L l (HsLam _ MG { mg_alts })) = do
+    let L _ matches = mg_alts
+    case matches of
+        -- not sure if arity 0 can exist in special cases, so not throwing an error
+        [] -> NoRewrite
+        (m:_) -> do
+            let L _ Match { m_pats } = m
+                arity = length m_pats
+            -- TODO deepLam did not fix issues with multiple args (see TODOs in EDSL example).
+            -- hardcoded 1 here matches older behaivor, relying on replaced lambdas having only one arg each.
+            -- Rewrite $ deepLam lamName composeRdrName l lam arity
+            Rewrite $ deepLam lamName composeRdrName l lam 1
+transformRebindableAbstraction _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- Constructors

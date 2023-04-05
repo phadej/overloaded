@@ -55,6 +55,12 @@ module Overloaded (
 
     -- * Overloaded:RecordFields
     -- | See "GHC.Records.Compat"  from @record-hasfield@ package.
+
+    -- * Overloaded:RebindableApplication
+    Apply (..),
+
+    -- * Overloaded:RebindableAbstraction
+    Lam (..),
   ) where
 
 import Overloaded.Categories
@@ -67,6 +73,8 @@ import Overloaded.Lists
 import Overloaded.Naturals
 import Overloaded.Numerals
 import Overloaded.Plugin
+import Overloaded.RebindableAbstraction
+import Overloaded.RebindableApplication
 import Overloaded.Symbols
 import Overloaded.TypeNats
 import Overloaded.TypeSymbols

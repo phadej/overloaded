@@ -59,6 +59,8 @@ data Names = Names
 data RdrNames = RdrNames
     { dollarName         :: GHC.RdrName
     , buildName          :: GHC.RdrName
+    , lamName            :: GHC.RdrName
+    , composeRdrName     :: GHC.RdrName
     }
 
 data CatNames = CatNames
@@ -118,6 +120,8 @@ getRdrNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.Hsc RdrNames
 getRdrNames dflags env = do
     let dollarName = GHC.Exact GHC.dollarName
     buildName <- GHC.Exact <$> lookupName dflags env overloadedConstructorsMN "build"
+    lamName <- GHC.Exact <$> lookupName dflags env overloadedAbstractionMN "lam"
+    composeRdrName <- GHC.Exact <$> lookupName dflags env ghcBaseMN "."
 
     return RdrNames {..}
 
@@ -226,6 +230,9 @@ overloadedTypeSymbolsMN =  GHC.mkModuleName "Overloaded.TypeSymbols"
 
 overloadedConstructorsMN :: GHC.ModuleName
 overloadedConstructorsMN =  GHC.mkModuleName "Overloaded.Constructors"
+
+overloadedAbstractionMN :: GHC.ModuleName
+overloadedAbstractionMN =  GHC.mkModuleName "Overloaded.RebindableAbstraction"
 
 ghcRecordsCompatMN :: GHC.ModuleName
 ghcRecordsCompatMN =  GHC.mkModuleName "GHC.Records.Compat"
