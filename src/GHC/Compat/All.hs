@@ -4,7 +4,14 @@ module X,
 -- * Extras
 mkFunTy,
 mkLocalMultId,
+findImportedModule',
 ) where
+
+#if MIN_VERSION_ghc(9,4,0)
+import GHC.Types.PkgQual        as X
+import GHC.Driver.Config.Parser as X
+import GHC.Parser.Lexer         as X
+#endif
 
 import GHC.Builtin.Names        as X
 import GHC.Builtin.Types        as X
@@ -46,6 +53,7 @@ import GHC.Driver.Ppr           as X
 import GHC.Hs                   as X hiding (FunDep, AnnRec, AnnLam, AnnCase, AnnLet, AnnType)
 import GHC.Types.Fixity         as X
 import GHC.Types.SourceText     as X
+import GHC.Types.Unique.FM      as X
 import GHC.Unit.Finder          as X
 import GHC.Utils.Logger         as X
 
@@ -59,3 +67,11 @@ mkFunTy =
 
 mkLocalMultId :: X.Name -> X.Type -> X.Id
 mkLocalMultId n t = X.mkLocalId n X.Many t
+
+findImportedModule' :: HscEnv -> ModuleName -> IO FindResult
+findImportedModule' hscEnv moduleName =
+#if MIN_VERSION_ghc(9,4,0)
+    findImportedModule hscEnv moduleName NoPkgQual
+#else
+    findImportedModule hscEnv moduleName Nothing
+#endif

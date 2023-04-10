@@ -193,7 +193,7 @@ renamedAction args' env gr = do
     names <- getNames dflags topEnv
     opts@Options {..} <- parseArgs dflags args
     when (opts == defaultOptions) $
-        warn dflags noSrcSpan $ GHC.text "No Overloaded features enabled"
+        putPluginUsageWarn dflags noSrcSpan $ GHC.text "No Overloaded features enabled"
 
     let transformNoOp :: a -> Rewrite a
         transformNoOp _ = NoRewrite
@@ -318,12 +318,22 @@ renamedAction args' env gr = do
 -- Parsed Action
 -------------------------------------------------------------------------------
 
+#if MIN_VERSION_ghc(9,4,0)
+parsedAction
+    :: [Plugins.CommandLineOption]
+    -> Plugins.ModSummary
+    -> Plugins.ParsedResult
+    -> Plugins.Hsc Plugins.ParsedResult
+parsedAction args _modSum pr = do
+    let pm = Plugins.parsedResultModule pr
+#else
 parsedAction
     :: [Plugins.CommandLineOption]
     -> Plugins.ModSummary
     -> GHC.HsParsedModule
     -> Plugins.Hsc GHC.HsParsedModule
 parsedAction args _modSum pm = do
+#endif
     let hsmodule = GHC.hpm_module pm
     topEnv <- GHC.Hsc $ \env warnMsgs -> return (env, warnMsgs)
 
@@ -360,7 +370,11 @@ parsedAction args _modSum pm = do
     hsmodule' <- transformPs dflags tr hsmodule
     let pm' = pm { GHC.hpm_module = hsmodule' }
 
+#if MIN_VERSION_ghc(9,4,0)
+    return pr { Plugins.parsedResultModule = pm' }
+#else
     return pm'
+#endif
 
 -------------------------------------------------------------------------------
 -- Args parsing
@@ -369,7 +383,7 @@ parsedAction args _modSum pm = do
 parseArgs :: forall m. (MonadIO m, GHC.HasLogger m) => GHC.DynFlags -> [String] -> m Options
 parseArgs dflags = foldM go0 defaultOptions where
     ambWarn :: String -> String -> m ()
-    ambWarn x y = warn dflags noSrcSpan $
+    ambWarn x y = putPluginUsageWarn dflags noSrcSpan $
         GHC.text ("Overloaded:" ++ x ++ " and Overloaded:" ++ y ++ " enabled")
         GHC.$$
         GHC.text ("picking Overloaded:" ++ y)
@@ -456,7 +470,7 @@ parseArgs dflags = foldM go0 defaultOptions where
         return $ opts { optConstructors = On mrn }
 
     go opts s _ = do
-        warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
+        putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
         return opts
 
     oneName :: [Char] -> [a] -> m (Maybe a)
@@ -464,17 +478,17 @@ parseArgs dflags = foldM go0 defaultOptions where
         []     -> return Nothing
         [vn]   -> return (Just vn)
         (vn:_) -> do
-            warn dflags noSrcSpan $ GHC.text $ "Multiple desugaring names specified for " ++ arg
+            putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Multiple desugaring names specified for " ++ arg
             return (Just vn)
 
     twoNames arg vns = case vns of
         []  -> return Nothing
         [_] -> do
-            warn dflags noSrcSpan $ GHC.text $ "Only single desugaring name specified for " ++ arg
+            putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Only single desugaring name specified for " ++ arg
             return Nothing
         [x,y]   -> return (Just (V2 x y))
         (x:y:_) -> do
-            warn dflags noSrcSpan $ GHC.text $ "Over two names specified for " ++ arg
+            putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Over two names specified for " ++ arg
             return (Just (V2 x y))
 
     elaborateArg :: String -> m (String, [VarName])
@@ -618,7 +632,11 @@ transformCodeStrings _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformNumerals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+#if MIN_VERSION_ghc(9,4,0)
+transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)))))
+#else
 transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
+#endif
     | not n, i >= 0 = do
         let name' = hsVarA l fromNumeralName
         let inner = hsTyApp l name' (HsTyLit noExtField (HsNumTy GHC.NoSourceText i))
@@ -631,7 +649,11 @@ transformNumerals _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformNaturals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+#if MIN_VERSION_ghc(9,4,0)
+transformNaturals Names {..} e@(L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)))))
+#else
 transformNaturals Names {..} e@(L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
+#endif
     | not n
     , i >= 0
     = Rewrite $ hsApps l (hsVarA l fromNaturalName) [e]
@@ -744,7 +766,7 @@ transformTypeSymbols _ _ = NoRewrite
 transformRebindableApplication :: RdrNames -> LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs)
 transformRebindableApplication RdrNames {..} (L l (HsApp _ f@(L fl _) x@(L xl _)))
     = Rewrite
-    $ L l $ HsPar noAnn
+    $ hsPar l
     $ L l $ OpApp noAnn f (L l' (HsVar noExtField (L l' dollarName))) x
   where
     l' = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA fl) (GHC.srcSpanStart $ locA xl)

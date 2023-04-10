@@ -1,8 +1,9 @@
+{-# OPTIONS -Wno-orphans           #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE TypeOperators         #-}
 module Overloaded.Test.CodeLabels.String where
 
 import Data.Char                         (toUpper)

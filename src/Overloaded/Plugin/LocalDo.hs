@@ -29,7 +29,7 @@ transformDo _ _ = NoRewrite
 
 transformDo' :: Names -> GHC.Name -> SrcSpanAnnA -> [ExprLStmt GhcRn] -> Either (GHC.DynFlags -> GhcDiagMonadWrapper ()) (LHsExpr GhcRn)
 transformDo' _names _doName l [] = Left $ \dflags ->
-    GhcDiagMonadWrapper $ putError dflags (locA l) $ GHC.text "Empty do"
+    GhcDiagMonadWrapper $ putPluginUsageErr dflags (locA l) $ GHC.text "Empty do"
 transformDo'  names  doName _ (L l (BindStmt _ pat body) : next) = do
     next' <- transformDo' names doName l next
     return $ hsApps l bind [ body, kont next' ]
@@ -45,7 +45,7 @@ transformDo'  names  doName _ (L l (BodyStmt _ body _ _) : next) = do
 
 transformDo' _ _ _ [L _ (LastStmt _ body _ _)] = return body
 transformDo' _ _ _ (L l stmt : _) = Left $ \dflags ->
-    GhcDiagMonadWrapper $ putError dflags (locA l) $ GHC.text "Unsupported statement in do"
+    GhcDiagMonadWrapper $ putPluginUsageErr dflags (locA l) $ GHC.text "Unsupported statement in do"
         GHC.$$ GHC.ppr stmt
         GHC.$$ GHC.text (SYB.gshow stmt)
 

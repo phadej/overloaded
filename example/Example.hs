@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedLabels      #-}
 -- {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols:Numerals:Lists:If:Labels=Overloaded.Symbols.fromSymbol:TypeNats #-}
+{-# OPTIONS -Wno-orphans -fplugin=Overloaded -fplugin-opt=Overloaded:Symbols:Numerals:Lists:If:Labels=Overloaded.Symbols.fromSymbol:TypeNats #-}
 
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -22,7 +22,6 @@ import           Data.SOP.BasicFunctors (I (..))
 import           Data.SOP.NP            (NP (..), POP (..))
 import           Data.String            (IsString (..))
 import           Data.Symbol.Ascii      (ReadNat)
-import           Data.Type.Equality
 import qualified Data.Type.Nat          as N
 import           Data.Vec.Lazy          (Vec (..))
 import           GHC.Exts               (Constraint)

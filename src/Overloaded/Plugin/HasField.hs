@@ -25,7 +25,7 @@ solveHasField
     -> Plugins.TcPluginM [(Maybe (GHC.EvTerm, [GHC.Ct]), GHC.Ct)]
 solveHasField PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
     forM wantedsHasPolyField $ \(ct, tys@(V4 _k _name _s a)) -> do
-        -- GHC.tcPluginIO $ warn dflags noSrcSpan $
+        -- tcPluginDebugMsg dflags noSrcSpan $
         --     GHC.text "wanted" GHC.<+> GHC.ppr ct
 
         m <- GHC.unsafeTcPluginTcM $ matchHasField dflags famInstEnvs rdrEnv tys
@@ -35,7 +35,7 @@ solveHasField PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
             -- let l = GHC.RealSrcSpan $ GHC.ctLocSpan ctloc
 
             -- debug print
-            -- GHC.tcPluginIO $ warn dflags l $ GHC.text "DEBUG" GHC.$$ GHC.ppr dbg
+            -- tcPluginDebugMsg dflags l $ GHC.text "DEBUG" GHC.$$ GHC.ppr dbg
 
             let s' = GHC.mkTyConApp tc args
 
@@ -77,7 +77,7 @@ solveHasField PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
             -- DC x0 x1 x2 -> (\b -> DC b x1 x2, x0)
             let caseBranch = GHC.Alt (GHC.DataAlt dc) (exist' ++ theta' ++ xs') rhs
 
-            -- GHC.tcPluginIO $ warn dflags l $
+            -- tcPluginDebugMsg dflags l $
             --     GHC.text "cases"
             --     GHC.$$
             --     GHC.ppr caseType

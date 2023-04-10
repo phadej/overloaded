@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 module Overloaded.Plugin.IdiomBrackets where
 
@@ -13,7 +14,11 @@ transformIdiomBrackets
     :: Names
     -> LHsExpr GhcRn
     -> Rewrite (LHsExpr GhcRn)
+#if MIN_VERSION_ghc(9,4,0)
+transformIdiomBrackets names (L _l (HsUntypedBracket _ (ExpBr _ e)))
+#else
 transformIdiomBrackets names (L _l (HsRnBracketOut _ (ExpBr _ e) _))
+#endif
     = Rewrite (transformIdiomBrackets' names e)
 transformIdiomBrackets _ _ = NoRewrite
 
@@ -70,7 +75,11 @@ idiomBT names (Branch lhs op rhs) = fmapExpr names op (idiomBT names lhs) `ap` i
 -------------------------------------------------------------------------------
 
 applyExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+#if MIN_VERSION_ghc(9,4,0)
+applyExpr names f (L _ (HsPar _ _ (L _ (HsApp _ (L _ (HsVar _ (L _ voidName'))) x)) _))
+#else
 applyExpr names f (L _ (HsPar _ (L _ (HsApp _ (L _ (HsVar _ (L _ voidName'))) x))))
+#endif
     | voidName' == voidName names = birdExpr names f x
 applyExpr names f x               = apExpr names f x
 

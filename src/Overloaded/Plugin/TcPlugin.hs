@@ -19,7 +19,10 @@ tcPlugin :: GHC.TcPlugin
 tcPlugin = GHC.TcPlugin
     { GHC.tcPluginInit  = tcPluginInit
     , GHC.tcPluginSolve = tcPluginSolve
-    , GHC.tcPluginStop  = const (return ())
+    , GHC.tcPluginStop  = const (pure ())
+#if MIN_VERSION_ghc(9,4,0)
+    , GHC.tcPluginRewrite = const GHC.emptyUFM
+#endif
     }
 
 -- HasPolyField "petName" Pet Pet [Char] [Char]
