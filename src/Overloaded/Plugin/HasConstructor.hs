@@ -3,15 +3,14 @@
 module Overloaded.Plugin.HasConstructor where
 
 import Control.Monad (forM)
-import Data.List     (find)
+import Data.List     (find, singleton)
 import Data.Maybe    (mapMaybe)
 
 import qualified GHC.Compat.All  as GHC
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Tc.Plugin as Plugins
-#else
-import qualified TcPluginM as Plugins
+#if MIN_VERSION_ghc(9,4,0)
+import qualified GHC.Data.Strict as Strict
 #endif
 
 import Overloaded.Plugin.Diagnostics
@@ -31,19 +30,17 @@ solveHasConstructor
     -> Plugins.TcPluginM [(Maybe (GHC.EvTerm, [GHC.Ct]), GHC.Ct)]
 solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
     forM wantedsHasPolyCon $ \(ct, tys@(V4 _k _name _s a)) -> do
-        -- Plugins.tcPluginIO $ warn dflags noSrcSpan $
-        --     GHC.text "HasConstructor wanted" GHC.<+> GHC.ppr ct
-
         m <- GHC.unsafeTcPluginTcM $ matchHasConstructor dflags famInstEnvs rdrEnv tys
         fmap (\evTerm -> (evTerm, ct)) $ forM m $ \(tc, dc, args, xs) -> do
             -- get location
             let ctloc = GHC.ctLoc ct
             let l = GHC.RealSrcSpan (GHC.ctLocSpan ctloc)
-#if MIN_VERSION_ghc(9,0,0)
+#if MIN_VERSION_ghc(9,4,0)
+                        Strict.Nothing
+#else
                         Nothing
 #endif
-
-            ifDebug $ Plugins.tcPluginIO $ warn dflags l $
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG1"
                     GHC.$$ GHC.ppr tc
                     GHC.$$ GHC.ppr dc
@@ -70,7 +67,7 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
             let tupleDataCon :: GHC.DataCon
                 tupleDataCon = GHC.tupleDataCon GHC.Boxed (length xs)
 
-            ifDebug $ Plugins.tcPluginIO $ warn dflags l $
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG2"
                     GHC.$$ GHC.ppr s'
                     GHC.$$ GHC.ppr a'
@@ -92,13 +89,13 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
                 _ -> do
                     aBndr <- makeVar "a" a'
                     xs' <- makeVars "x" xs
-                    return $ GHC.mkCoreLams [aBndr] $ GHC.Case (GHC.Var aBndr) aBndr s'
-                        [( GHC.DataAlt tupleDataCon  -- (,,,)
-                        , xs'                        -- x1 ... xn
-                        , GHC.mkConApp2 dc args xs'  -- DC x1 ... xn
-                        )]
+                    return $ GHC.mkCoreLams [aBndr] $ GHC.Case (GHC.Var aBndr) aBndr s' $ singleton $
+                        GHC.Alt
+                        (GHC.DataAlt tupleDataCon)
+                        xs'                        -- x1 ... xn
+                        ( GHC.mkConApp2 dc args xs')  -- DC x1 ... xn
 
-            ifDebug $ Plugins.tcPluginIO $ warn dflags l $
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG-build"
                     GHC.$$ GHC.ppr exprBuild
 
@@ -113,8 +110,8 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
                     return $ GHC.mkCoreLams [sBndr] $ GHC.Case (GHC.Var sBndr) sBndr
                         (GHC.mkTyConApp GHC.maybeTyCon [a'])
                         -- default case have to be first.
-                        [ (GHC.DEFAULT, [], GHC.mkConApp2 GHC.nothingDataCon [a'] [])
-                        , (GHC.DataAlt dc, [aBndr], GHC.mkConApp2 GHC.justDataCon [a'] [aBndr])
+                        [ GHC.Alt GHC.DEFAULT [] (GHC.mkConApp2 GHC.nothingDataCon [a'] [])
+                        , GHC.Alt (GHC.DataAlt dc) [aBndr] (GHC.mkConApp2 GHC.justDataCon [a'] [aBndr])
                         ]
 
                 -- nullary: \s -> case s of
@@ -124,8 +121,8 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
                     sBndr <- makeVar "s" s'
                     return $ GHC.mkCoreLams [sBndr] $ GHC.Case (GHC.Var sBndr) sBndr
                         (GHC.mkTyConApp GHC.maybeTyCon [a'])
-                        [ (GHC.DEFAULT, [], GHC.mkConApp2 GHC.nothingDataCon [a'] [])
-                        , (GHC.DataAlt dc, [], GHC.mkConApp2 GHC.justDataCon [a'] [GHC.unitDataConId])
+                        [ GHC.Alt GHC.DEFAULT [] (GHC.mkConApp2 GHC.nothingDataCon [a'] [])
+                        , GHC.Alt (GHC.DataAlt dc) [] (GHC.mkConApp2 GHC.justDataCon [a'] [GHC.unitDataConId])
                         ]
 
                 -- multi: \s -> case s of
@@ -138,13 +135,13 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
 
                     return $ GHC.mkCoreLams [sBndr] $ GHC.Case (GHC.Var sBndr) sBndr
                         (GHC.mkTyConApp GHC.maybeTyCon [a'])
-                        [ (GHC.DEFAULT, [], GHC.mkConApp2 GHC.nothingDataCon [a'] [])
-                        , (GHC.DataAlt dc, xs',
-                          GHC.Let (GHC.NonRec aBndr $ GHC.mkConApp2 tupleDataCon xs xs') $
-                          GHC.mkConApp2 GHC.justDataCon [a'] [aBndr])
+                        [ GHC.Alt GHC.DEFAULT [] (GHC.mkConApp2 GHC.nothingDataCon [a'] [])
+                        , GHC.Alt (GHC.DataAlt dc) xs'
+                          (GHC.Let (GHC.NonRec aBndr $ GHC.mkConApp2 tupleDataCon xs xs') $
+                            GHC.mkConApp2 GHC.justDataCon [a'] [aBndr])
                         ]
 
-            ifDebug $ Plugins.tcPluginIO $ warn dflags l $
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG-match"
                     GHC.$$ GHC.ppr exprMatch
 

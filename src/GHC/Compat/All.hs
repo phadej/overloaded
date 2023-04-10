@@ -4,9 +4,15 @@ module X,
 -- * Extras
 mkFunTy,
 mkLocalMultId,
+findImportedModule',
 ) where
 
-#if MIN_VERSION_ghc(9,0,0)
+#if MIN_VERSION_ghc(9,4,0)
+import GHC.Types.PkgQual        as X
+import GHC.Driver.Config.Parser as X
+import GHC.Parser.Lexer         as X
+#endif
+
 import GHC.Builtin.Names        as X
 import GHC.Builtin.Types        as X
 import GHC.Core                 as X
@@ -40,54 +46,16 @@ import GHC     as X (Module)
 
 import qualified GHC.Core.TyCo.Rep as GHC
 
-#if MIN_VERSION_ghc(9,2,0)
 import GHC.Core.Type            as X hiding (mkFunTy)
+import GHC.Driver.Env.Types     as X
+import GHC.Driver.Monad         as X
+import GHC.Driver.Ppr           as X
 import GHC.Hs                   as X hiding (FunDep, AnnRec, AnnLam, AnnCase, AnnLet, AnnType)
 import GHC.Types.Fixity         as X
-#else
-import GHC.Core.Type            as X
-import GHC.Driver.Finder        as X
-import GHC.Driver.Types         as X
-#endif
-
-#else
-#if MIN_VERSION_ghc(8,10,0)
-import Constraint as X
-import Predicate  as X
-import Type       as X
-#else
-import Type as X hiding (mkFunTy)
-#endif
-
-import BasicTypes as X
-import Class      as X
-import CoreSyn    as X
-import DataCon    as X
-import DynFlags   as X
-import ErrUtils   as X
-import FamInst    as X
-import FamInstEnv as X
-import Finder     as X
-import HscTypes   as X
-import Id         as X
-import IfaceEnv   as X
-import MkCore     as X
-import Module     as X
-import Name       as X
-import Outputable as X
-import PrelNames  as X
-import RdrName    as X
-import SrcLoc     as X
-import TcEnv      as X
-import TcEvidence as X
-import TcMType    as X
-import TcRnMonad  as X
-import TyCoRep    as X hiding (mkFunTy)
-import TyCon      as X
-import TysWiredIn as X
-
-import qualified TyCoRep as GHC
-#endif
+import GHC.Types.SourceText     as X
+import GHC.Types.Unique.FM      as X
+import GHC.Unit.Finder          as X
+import GHC.Utils.Logger         as X
 
 -------------------------------------------------------------------------------
 -- Compat functions
@@ -95,17 +63,15 @@ import qualified TyCoRep as GHC
 
 mkFunTy :: X.Type -> X.Type -> X.Type
 mkFunTy =
-#if MIN_VERSION_ghc(9,0,0)
     GHC.mkFunTy X.VisArg X.Many
-#elif MIN_VERSION_ghc(8,10,0)
-    GHC.mkFunTy X.VisArg
-#else
-    GHC.mkFunTy
-#endif
 
 mkLocalMultId :: X.Name -> X.Type -> X.Id
-#if MIN_VERSION_ghc(9,0,0)
 mkLocalMultId n t = X.mkLocalId n X.Many t
+
+findImportedModule' :: HscEnv -> ModuleName -> IO FindResult
+findImportedModule' hscEnv moduleName =
+#if MIN_VERSION_ghc(9,4,0)
+    findImportedModule hscEnv moduleName NoPkgQual
 #else
-mkLocalMultId n t = X.mkLocalId n t
+    findImportedModule hscEnv moduleName Nothing
 #endif

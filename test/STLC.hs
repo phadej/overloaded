@@ -10,8 +10,8 @@ module STLC where
 
 import Data.Kind             (Type)
 import Data.Proxy            (Proxy (..))
+import Numeric.Natural       (Natural)
 import Overloaded.Categories
-import Numeric.Natural (Natural)
 
 import qualified Control.Category
 

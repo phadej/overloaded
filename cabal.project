@@ -1,4 +1,4 @@
-with-compiler: ghc-8.6.5
+with-compiler: ghc-9.4.2
 packages: .
 tests:  True
 

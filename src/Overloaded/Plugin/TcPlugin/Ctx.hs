@@ -5,11 +5,7 @@ module Overloaded.Plugin.TcPlugin.Ctx where
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Tc.Plugin as Plugins
-#else
-import qualified TcPluginM as Plugins
-#endif
 
 import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.Names
@@ -25,12 +21,17 @@ tcPluginInit = do
 
     let findModule :: GHC.ModuleName -> Plugins.TcPluginM GHC.Module
         findModule m = do
-            im <- Plugins.findImportedModule m Nothing
+            im <- Plugins.findImportedModule m
+#if MIN_VERSION_ghc(9,4,0)
+                GHC.NoPkgQual
+#else
+                Nothing
+#endif
             case im of
                 GHC.Found _ md -> return md
                 _              -> do
-                    Plugins.tcPluginIO $ putError dflags noSrcSpan  $
-                        GHC.text "Cannot find module" GHC.<+> GHC.ppr m 
+                    tcInternalPluginErr dflags noSrcSpan  $
+                        GHC.text "Cannot find module" GHC.<+> GHC.ppr m
                     fail "panic!"
 
     hasPolyFieldCls <- do

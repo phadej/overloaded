@@ -8,10 +8,10 @@
 module Main where
 
 import Control.Monad      (when)
+import Data.List          (intercalate)
 import Data.Word          (Word64)
 import Numeric            (showFFloat)
 import System.Environment (getArgs)
-import Data.List (intercalate)
 
 import qualified Control.Category
 import qualified Numeric.LinearAlgebra  as LA

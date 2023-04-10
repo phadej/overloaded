@@ -18,11 +18,7 @@ import qualified Data.Map.Strict as Map
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Plugins     as Plugins
-#else
-import qualified GhcPlugins      as Plugins
-#endif
 
 import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.Names
@@ -48,7 +44,7 @@ transformCategories names (L _l (HsProc _ pat (L _ (HsCmdTop _ cmd)))) = do
         expr :: LHsExpr GhcRn
         expr = generate names morp
 
-    -- _ <- Error $ \dflags -> putError dflags _l $ GHC.text "DEBUG"
+    -- _ <- Error $ \dflags -> putPluginUsageErr dflags _l $ GHC.text "DEBUG"
     --     GHC.$$ GHC.text (show $ first (GHC.showPpr dflags) proc)
     --     GHC.$$ GHC.text (show $ fmap  (GHC.showPpr dflags) morp)
     --     GHC.$$ GHC.ppr expr
@@ -62,15 +58,14 @@ transformCategories _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 parsePat :: LPat GhcRn -> Rewrite (SomePattern GHC.Name)
-#if MIN_VERSION_ghc(8,8,0) && !MIN_VERSION_ghc(8,10,1)
-parsePat (XPat (L l pat)) = parsePat' l pat
-parsePat pat              = parsePat' noSrcSpan pat
-#else
-parsePat (L l pat) = parsePat' l pat
-#endif
+parsePat (L l pat) = parsePat' (locA l) pat
 
 parsePat' :: SrcSpan -> Pat GhcRn -> Rewrite (SomePattern GHC.Name)
+#if MIN_VERSION_ghc(9,4,0)
+parsePat' _ (ParPat _ _ pat _) =
+#else
 parsePat' _ (ParPat _ pat) =
+#endif
     parsePat pat
 parsePat' _ WildPat {} =
     return $ SomePattern PatternWild
@@ -81,9 +76,9 @@ parsePat' _ (TuplePat _ [x, y] Plugins.Boxed) = do
     SomePattern y' <- parsePat y
     return $ SomePattern $ PatternTuple x' y'
 parsePat' l TuplePat {} = Error $ \dflags ->
-    putError dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
+    putPluginUsageErr dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
 parsePat' l pat = Error $ \dflags ->
-    putError dflags l $ GHC.text "Cannot parse pattern for Overloaded:Categories"
+    putPluginUsageErr dflags l $ GHC.text "Cannot parse pattern for Overloaded:Categories"
         GHC.$$ GHC.ppr pat
         GHC.$$ GHC.text (SYB.gshow pat)
 
@@ -92,7 +87,11 @@ parseExpr
     -> Map GHC.Name b
     -> LHsExpr GhcRn
     -> Rewrite (Expression (Var b a))
+#if MIN_VERSION_ghc(9,4,0)
+parseExpr names ctx (L _ (HsPar _ _ expr _)) =
+#else
 parseExpr names ctx (L _ (HsPar _ expr)) =
+#endif
     parseExpr names ctx expr
 parseExpr _     ctx (L _ (HsVar _ (L l name)))
     | name == GHC.getName (GHC.tupleDataCon GHC.Boxed 0)
@@ -100,14 +99,14 @@ parseExpr _     ctx (L _ (HsVar _ (L l name)))
     | otherwise
     = case Map.lookup name ctx of
         Nothing -> Error $ \dflags ->
-            putError dflags l $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
+            putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
         Just b -> return $ ExpressionVar (B b)
-parseExpr names ctx (L _ (ExplicitTuple _ [L _ (Present _ x), L _ (Present _ y)] Plugins.Boxed)) = do
+parseExpr names ctx (L _ (ExplicitTuple _ [Present _ x, Present _ y] Plugins.Boxed)) = do
     x' <- parseExpr names ctx x
     y' <- parseExpr names ctx y
     return (ExpressionTuple x' y')
 parseExpr _     _ (L l ExplicitTuple {}) = Error $ \dflags ->
-    putError dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
+    putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
 parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
     | fName == conLeftName names = do
         x' <- parseExpr names ctx x
@@ -116,9 +115,9 @@ parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
         x' <- parseExpr names ctx x
         return (ExpressionRight x')
     | otherwise = Error $ \dflags ->
-        putError dflags l $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
 parseExpr _     _   (L l expr) = Error $ \dflags ->
-    putError dflags l $ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
+    putPluginUsageErr dflags (locA l)$ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
         GHC.$$ GHC.ppr expr
         GHC.$$ GHC.text (SYB.gshow expr)
 
@@ -128,7 +127,7 @@ parseCmd
     -> LHsCmd GhcRn
     -> Rewrite (Continuation (LHsExpr GhcRn) (Var b a))
 parseCmd names ctx (L _ (HsCmdDo _ (L l stmts))) =
-    parseStmts names ctx l stmts
+    parseStmts names ctx (l2l l) stmts
 parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsFirstOrderApp _)) = do
     morp' <- parseTerm names morp
     expr' <- parseExpr names ctx expr
@@ -139,19 +138,9 @@ parseCmd names ctx (L _ (HsCmdArrApp _ morp expr HsHigherOrderApp _)) = do
     return $ Last (Left morp') expr'
 parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
     case mg_alts matchGroup of
-#if MIN_VERSION_ghc(9,0,1)
         L _ [ L _ Match { m_pats = [L _ (ConPat _ (L _ acon) aargs)], m_grhss = abody' }
             , L _ Match { m_pats = [L _ (ConPat _ (L _ bcon) bargs)], m_grhss = bbody' }
             ]
-#elif MIN_VERSION_ghc(8,8,0) && !MIN_VERSION_ghc(8,10,1)
-        L _ [ L _ Match { m_pats = [XPat (L _ (ConPatIn (L _ acon) aargs))], m_grhss = abody' }
-            , L _ Match { m_pats = [XPat (L _ (ConPatIn (L _ bcon) bargs))], m_grhss = bbody' }
-            ]
-#else
-        L _ [ L _ Match { m_pats = [L _ (ConPatIn (L _ acon) aargs)], m_grhss = abody' }
-            , L _ Match { m_pats = [L _ (ConPatIn (L _ bcon) bargs)], m_grhss = bbody' }
-            ]
-#endif
             -- Left and Right, or Right and Left
             |  [acon,bcon] == [conLeftName names,conRightName names]
             || [acon,bcon] == [conRightName names,conLeftName names]
@@ -171,7 +160,7 @@ parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
                 acont <- parseCmd names (combineMaps ctx apat) abody
                 bcont <- parseCmd names (combineMaps ctx bpat) bbody
 
-                -- Error $ \dflags -> putError dflags noSrcSpan $ GHC.text "TODO"
+                -- Error $ \dflags -> putPluginUsageErr dflags noSrcSpan $ GHC.text "TODO"
                 --     GHC.$$ GHC.ppr acon
                 --     GHC.$$ GHC.ppr bcon
                 --     GHC.$$ GHC.ppr aarg
@@ -182,16 +171,16 @@ parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
                 return $ caseCont expr' apat bpat (second assoc acont) (second assoc bcont)
 
         L l _ -> Error $ \dflags ->
-            putError dflags l $ GHC.text "Overloaded:Categories only case of Left and Right are supported"
+            putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories only case of Left and Right are supported"
                 GHC.$$ GHC.text (SYB.gshow (mg_alts matchGroup))
 parseCmd _     _   (L l cmd) =
     Error $ \dflags ->
-        putError dflags l $ GHC.text "Unsupported command in proc for Overloaded:Categories"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Unsupported command in proc for Overloaded:Categories"
             GHC.$$ GHC.ppr cmd
             GHC.$$ GHC.text (SYB.gshow cmd)
 
 simpleGRHSs :: GRHSs GhcRn body -> Maybe body
-simpleGRHSs (GRHSs _ [L _ (GRHS _ [] body)] (L _ (EmptyLocalBinds _))) = Just body
+simpleGRHSs (GRHSs _ [L _ (GRHS _ [] body)] (EmptyLocalBinds _)) = Just body
 simpleGRHSs _ = Nothing
 
 parseTerm
@@ -205,14 +194,10 @@ parseTerm _ term = return (MTerm term)
 parseStmts
     :: Names
     -> Map GHC.Name b
-    -> SrcSpan
+    -> SrcSpanAnnA
     -> [CmdLStmt GhcRn]
     -> Rewrite (Continuation (LHsExpr GhcRn) (Var b a))
-#if MIN_VERSION_ghc(9,0,1)
 parseStmts names ctx _ (L l (BindStmt _ pat body) : next) = do
-#else
-parseStmts names ctx _ (L l (BindStmt _ pat body _ _) : next) = do
-#endif
     SomePattern pat' <- parsePat pat
     cont1 <- parseCmd names ctx body
     cont2 <- parseStmts names (combineMaps ctx pat') l next
@@ -221,12 +206,12 @@ parseStmts names ctx _ [L _ (LastStmt _ body _ _)] =
     parseCmd names ctx body
 parseStmts _     _   _ (L l stmt : _) =
     Error $ \dflags ->
-        putError dflags l $ GHC.text "Unsupported statement in proc-do for Overloaded:Categories"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Unsupported statement in proc-do for Overloaded:Categories"
             GHC.$$ GHC.ppr stmt
             GHC.$$ GHC.text (SYB.gshow stmt)
 parseStmts _     _   l [] =
     Error $ \dflags ->
-        putError dflags l $ GHC.text "Empty do block in proc"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Empty do block in proc"
 
 -------------------------------------------------------------------------------
 -- Variables
@@ -467,15 +452,15 @@ desugarE ctx = go where
 
 generate :: Names -> Morphism (LHsExpr GhcRn) -> LHsExpr GhcRn
 generate Names {catNames = CatNames {..}} = go where
-    go MId            = hsVar noSrcSpan catIdentityName
-    go (MCompose f g) = hsPar noSrcSpan $ hsOpApp noSrcSpan (go f) (hsVar noSrcSpan catComposeName) (go g)
+    go MId            = hsVar noSrcSpanA catIdentityName
+    go (MCompose f g) = hsPar noSrcSpanA $ hsOpApp noSrcSpanA (go f) (hsVar noSrcSpanA catComposeName) (go g)
     go (MTerm term)   = term
-    go MTerminal      = hsVar noSrcSpan catTerminalName
-    go MProj1         = hsVar noSrcSpan catProj1Name
-    go MProj2         = hsVar noSrcSpan catProj2Name
-    go (MProduct f g) = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFanoutName) [go f, go g]
-    go MInL           = hsVar noSrcSpan catInlName
-    go MInR           = hsVar noSrcSpan catInrName
-    go MDistr         = hsVar noSrcSpan catDistrName
-    go MEval          = hsVar noSrcSpan catEvalName
-    go (MCase f g)    = hsPar noSrcSpan $ hsApps noSrcSpan (hsVar noSrcSpan catFaninName) [go f, go g]
+    go MTerminal      = hsVar noSrcSpanA catTerminalName
+    go MProj1         = hsVar noSrcSpanA catProj1Name
+    go MProj2         = hsVar noSrcSpanA catProj2Name
+    go (MProduct f g) = hsPar noSrcSpanA $ hsApps noSrcSpanA (hsVar noSrcSpanA catFanoutName) [go f, go g]
+    go MInL           = hsVar noSrcSpanA catInlName
+    go MInR           = hsVar noSrcSpanA catInrName
+    go MDistr         = hsVar noSrcSpanA catDistrName
+    go MEval          = hsVar noSrcSpanA catEvalName
+    go (MCase f g)    = hsPar noSrcSpanA $ hsApps noSrcSpanA (hsVar noSrcSpanA catFaninName) [go f, go g]
