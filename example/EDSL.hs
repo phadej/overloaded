@@ -10,7 +10,8 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
-{-# OPTIONS -fplugin=Overloaded
+{-# OPTIONS -Wno-unused-top-binds -Wno-name-shadowing -Wno-missing-signatures
+            -fplugin=Overloaded
             -fplugin-opt=Overloaded:RebindableApplication=$
             -fplugin-opt=Overloaded:RebindableAbstraction=lam
 #-}
@@ -20,9 +21,8 @@ module Main (main) where
 
 import           Data.Kind                        (Type)
 import           Overloaded.RebindableAbstraction (Lam (lam))
-import qualified Overloaded.RebindableAbstraction as Rba
 import           Overloaded.RebindableApplication
-                 (A, Apply (apply), pureA, unA, ($))
+                 (Apply (apply), ($))
 import           Prelude                          hiding (($))
 
 main :: IO ()
@@ -79,8 +79,10 @@ termId = genericId
 bar :: Term s PInt
 bar = (Term (PFun (\(PInt a) -> PInt (a + 1)))) 1
 
+-- not giving type signature to show that bottom-up inference works
 bar2 = (+ 1) (1 :: Term s PInt)
 
+-- not giving type signature to show that bottom-up inference works
 derp = (+ 1) (1 :: Int)
 
 herp = ((\a b -> a + b) :: Int -> Int -> Int) 1 1
@@ -112,9 +114,9 @@ lam3 f = \a -> lam2 (f a)
 pconst :: Term s (a :--> b :--> a)
 -- pconst :: a -> b -> a
 -- TODO broken, I suspect a GHC bug
--- pconst = \a b -> a
+-- pconst = \a _ -> a
 -- Workaround:
-pconst = \a -> \b -> a
+pconst = \a -> \_ -> a
 
 pdouble :: Term s (PInt :--> PInt)
 pdouble = \x -> x + 1

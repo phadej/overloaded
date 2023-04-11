@@ -117,11 +117,11 @@ getNames dflags env = do
     return Names {..}
 
 getRdrNames :: GHC.DynFlags -> GHC.HscEnv -> GHC.Hsc RdrNames
-getRdrNames dflags env = do
-    let dollarName = GHC.Exact GHC.dollarName
-    buildName <- GHC.Exact <$> lookupName dflags env overloadedConstructorsMN "build"
-    lamName <- GHC.Exact <$> lookupName dflags env overloadedAbstractionMN "lam"
-    composeRdrName <- GHC.Exact <$> lookupName dflags env ghcBaseMN "."
+getRdrNames _dflags _env = do
+    let dollarName = GHC.mkRdrUnqual (GHC.mkVarOcc "$")
+        buildName = GHC.mkRdrUnqual (GHC.mkVarOcc "build")
+        lamName = GHC.mkRdrUnqual (GHC.mkVarOcc "lam")
+        composeRdrName = GHC.mkRdrUnqual (GHC.mkVarOcc ".")
 
     return RdrNames {..}
 
@@ -141,31 +141,31 @@ getCatNames dflags env module_ = do
 
     return CatNames {..}
 
-lookupName :: (GHC.HasLogger m, MonadIO m) => GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> m GHC.Name
+lookupName :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
 lookupName dflags env mn vn = do
-    res <- liftIO $ GHC.findImportedModule env mn Nothing
+    res <- liftIO $ GHC.findImportedModule' env mn
     case res of
-        GHC.Found _ md -> liftIO $ GHC.lookupOrigIO env md (GHC.mkVarOcc vn)
+        GHC.Found _ md -> GHC.lookupOrig md (GHC.mkVarOcc vn)
         _              -> do
-            putError dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
+            putInternalPluginErr dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             liftIO $ fail "panic!"
 
 lookupNameDataCon :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
 lookupNameDataCon dflags env mn vn = do
-    res <-  liftIO $ GHC.findImportedModule env mn Nothing
+    res <-  liftIO $ GHC.findImportedModule' env mn
     case res of
         GHC.Found _ md -> GHC.lookupOrig md (GHC.mkDataOcc vn)
         _              -> do
-            putError dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
+            putInternalPluginErr dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             fail "panic!"
 
 lookupName' :: GHC.DynFlags -> GHC.HscEnv -> GHC.ModuleName -> String -> GHC.TcM GHC.Name
 lookupName' dflags env mn vn = do
-    res <-  liftIO $ GHC.findImportedModule env mn Nothing
+    res <-  liftIO $ GHC.findImportedModule' env mn
     case res of
         GHC.Found _ md -> GHC.lookupOrig md (GHC.mkTcOcc vn)
         _              -> do
-            putError dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
+            putInternalPluginErr dflags noSrcSpan $ GHC.text "Cannot find module" GHC.<+> GHC.ppr mn
             fail "panic!"
 
 -- | Module name and variable name
@@ -231,8 +231,9 @@ overloadedTypeSymbolsMN =  GHC.mkModuleName "Overloaded.TypeSymbols"
 overloadedConstructorsMN :: GHC.ModuleName
 overloadedConstructorsMN =  GHC.mkModuleName "Overloaded.Constructors"
 
-overloadedAbstractionMN :: GHC.ModuleName
-overloadedAbstractionMN =  GHC.mkModuleName "Overloaded.RebindableAbstraction"
+-- unused for now, since we just use the "lam" that is in scope
+-- overloadedAbstractionMN :: GHC.ModuleName
+-- overloadedAbstractionMN =  GHC.mkModuleName "Overloaded.RebindableAbstraction"
 
 ghcRecordsCompatMN :: GHC.ModuleName
 ghcRecordsCompatMN =  GHC.mkModuleName "GHC.Records.Compat"

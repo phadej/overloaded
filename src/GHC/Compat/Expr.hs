@@ -1,10 +1,18 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DataKinds #-}
 -- | THis module re-exports 'HsExpr' and few related data types.
 module GHC.Compat.Expr (
     -- * Expression
     HsExpr (..),
     LHsExpr,
+#if MIN_VERSION_ghc(9,4,0)
+    HsBracketTc (..),
+    HsQuote (..),
+    HsDoFlavour (..),
+#else
     HsBracket (..),
+#endif
     HsStmtContext (..),
     StmtLR (..),
     ExprLStmt,
@@ -123,6 +131,14 @@ hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
 hsTyApp_RDR :: SrcSpanAnnA -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
 hsTyApp_RDR l x ty = L l $ HsAppType noSrcSpan x (HsWC noExtField (L l ty))
 
+hsGrhs :: [GuardLStmt GhcRn] -> LHsExpr GhcRn -> LGRHS GhcRn (LHsExpr GhcRn)
+hsGrhs guardStmts body =
+#if MIN_VERSION_ghc(9,4,0)
+    L noSrcSpanA $ GRHS noAnn guardStmts body
+#else
+    L noSrcSpan $ GRHS noAnn guardStmts body
+#endif
+
 -- | Construct simple lambda @\(pat) -> body@.
 hsLam :: SrcSpanAnnA -> LPat GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 hsLam l pat body = L l $ HsLam noExtField MG
@@ -133,15 +149,20 @@ hsLam l pat body = L l $ HsLam noExtField MG
         , m_pats  = [pat]
         , m_grhss = GRHSs
             { grhssExt        = emptyComments
-            , grhssGRHSs      = [ L noSrcSpan $ GRHS noAnn [] body ]
+            , grhssGRHSs      = [ hsGrhs [] body ]
             , grhssLocalBinds = EmptyLocalBinds noExtField
             }
         }
     , mg_origin = GHC.Generated
     }
 
-hsPar :: SrcSpanAnnA -> LHsExpr GhcRn -> LHsExpr GhcRn
-hsPar l e = L l (HsPar noAnn e)
+hsPar :: SrcSpanAnnA -> LHsExpr (GhcPass p) -> LHsExpr (GhcPass p)
+hsPar l e =
+#if MIN_VERSION_ghc(9,4,0)
+    L l (HsPar noAnn (L NoTokenLoc (HsTok @"(")) e (L NoTokenLoc (HsTok @")")))
+#else
+    L l (HsPar noAnn e)
+#endif
 
 nameToString :: GHC.Name -> String
 nameToString = GHC.occNameString . GHC.occName

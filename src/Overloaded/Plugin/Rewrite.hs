@@ -32,7 +32,6 @@ instance Applicative Rewrite where
     (<*>) = ap
 
 instance Monad Rewrite where
-    return = Rewrite
     NoRewrite >>= _ = NoRewrite
     Rewrite a >>= k = k a
     WithName f >>= k = WithName (\n -> f n >>= k)

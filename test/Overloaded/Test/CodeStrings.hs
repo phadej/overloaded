@@ -7,7 +7,7 @@ import Test.Tasty.HUnit (testCase, (@?=))
 
 import qualified Data.ByteString as BS
 
-import Overloaded
+import Overloaded ()
 
 tests :: TestTree
 tests = testGroup "Labels"

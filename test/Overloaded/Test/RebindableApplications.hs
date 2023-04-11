@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS -fplugin=Overloaded
+{-# OPTIONS -Wno-name-shadowing
+            -fplugin=Overloaded
             -fplugin-opt=Overloaded:RebindableApplication=$ #-}
 module Overloaded.Test.RebindableApplications where
 

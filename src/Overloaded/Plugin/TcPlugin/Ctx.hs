@@ -21,11 +21,16 @@ tcPluginInit = do
 
     let findModule :: GHC.ModuleName -> Plugins.TcPluginM GHC.Module
         findModule m = do
-            im <- Plugins.findImportedModule m Nothing
+            im <- Plugins.findImportedModule m
+#if MIN_VERSION_ghc(9,4,0)
+                GHC.NoPkgQual
+#else
+                Nothing
+#endif
             case im of
                 GHC.Found _ md -> return md
                 _              -> do
-                    tcError dflags noSrcSpan  $
+                    tcInternalPluginErr dflags noSrcSpan  $
                         GHC.text "Cannot find module" GHC.<+> GHC.ppr m
                     fail "panic!"
 

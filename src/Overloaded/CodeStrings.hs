@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE TypeOperators         #-}
 module Overloaded.CodeStrings where
 
 import Control.Monad                     (when)

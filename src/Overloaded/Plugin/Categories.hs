@@ -44,7 +44,7 @@ transformCategories names (L _l (HsProc _ pat (L _ (HsCmdTop _ cmd)))) = do
         expr :: LHsExpr GhcRn
         expr = generate names morp
 
-    -- _ <- Error $ \dflags -> putError dflags _l $ GHC.text "DEBUG"
+    -- _ <- Error $ \dflags -> putPluginUsageErr dflags _l $ GHC.text "DEBUG"
     --     GHC.$$ GHC.text (show $ first (GHC.showPpr dflags) proc)
     --     GHC.$$ GHC.text (show $ fmap  (GHC.showPpr dflags) morp)
     --     GHC.$$ GHC.ppr expr
@@ -61,7 +61,11 @@ parsePat :: LPat GhcRn -> Rewrite (SomePattern GHC.Name)
 parsePat (L l pat) = parsePat' (locA l) pat
 
 parsePat' :: SrcSpan -> Pat GhcRn -> Rewrite (SomePattern GHC.Name)
+#if MIN_VERSION_ghc(9,4,0)
+parsePat' _ (ParPat _ _ pat _) =
+#else
 parsePat' _ (ParPat _ pat) =
+#endif
     parsePat pat
 parsePat' _ WildPat {} =
     return $ SomePattern PatternWild
@@ -72,9 +76,9 @@ parsePat' _ (TuplePat _ [x, y] Plugins.Boxed) = do
     SomePattern y' <- parsePat y
     return $ SomePattern $ PatternTuple x' y'
 parsePat' l TuplePat {} = Error $ \dflags ->
-    putError dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
+    putPluginUsageErr dflags l $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
 parsePat' l pat = Error $ \dflags ->
-    putError dflags l $ GHC.text "Cannot parse pattern for Overloaded:Categories"
+    putPluginUsageErr dflags l $ GHC.text "Cannot parse pattern for Overloaded:Categories"
         GHC.$$ GHC.ppr pat
         GHC.$$ GHC.text (SYB.gshow pat)
 
@@ -83,7 +87,11 @@ parseExpr
     -> Map GHC.Name b
     -> LHsExpr GhcRn
     -> Rewrite (Expression (Var b a))
+#if MIN_VERSION_ghc(9,4,0)
+parseExpr names ctx (L _ (HsPar _ _ expr _)) =
+#else
 parseExpr names ctx (L _ (HsPar _ expr)) =
+#endif
     parseExpr names ctx expr
 parseExpr _     ctx (L _ (HsVar _ (L l name)))
     | name == GHC.getName (GHC.tupleDataCon GHC.Boxed 0)
@@ -91,14 +99,14 @@ parseExpr _     ctx (L _ (HsVar _ (L l name)))
     | otherwise
     = case Map.lookup name ctx of
         Nothing -> Error $ \dflags ->
-            putError dflags (locA l) $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
+            putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories: Unbound variable" GHC.<+> GHC.ppr name
         Just b -> return $ ExpressionVar (B b)
 parseExpr names ctx (L _ (ExplicitTuple _ [Present _ x, Present _ y] Plugins.Boxed)) = do
     x' <- parseExpr names ctx x
     y' <- parseExpr names ctx y
     return (ExpressionTuple x' y')
 parseExpr _     _ (L l ExplicitTuple {}) = Error $ \dflags ->
-    putError dflags (locA l) $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
+    putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories: only boxed tuples of arity 2 are supported"
 parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
     | fName == conLeftName names = do
         x' <- parseExpr names ctx x
@@ -107,9 +115,9 @@ parseExpr names ctx (L _ (HsApp _ (L _ (HsVar _ (L l fName))) x))
         x' <- parseExpr names ctx x
         return (ExpressionRight x')
     | otherwise = Error $ \dflags ->
-        putError dflags (locA l) $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories: only applications of Left and Right are supported"
 parseExpr _     _   (L l expr) = Error $ \dflags ->
-    putError dflags (locA l)$ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
+    putPluginUsageErr dflags (locA l)$ GHC.text "Cannot parse -< right-hand-side for Overloaded:Categories"
         GHC.$$ GHC.ppr expr
         GHC.$$ GHC.text (SYB.gshow expr)
 
@@ -152,7 +160,7 @@ parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
                 acont <- parseCmd names (combineMaps ctx apat) abody
                 bcont <- parseCmd names (combineMaps ctx bpat) bbody
 
-                -- Error $ \dflags -> putError dflags noSrcSpan $ GHC.text "TODO"
+                -- Error $ \dflags -> putPluginUsageErr dflags noSrcSpan $ GHC.text "TODO"
                 --     GHC.$$ GHC.ppr acon
                 --     GHC.$$ GHC.ppr bcon
                 --     GHC.$$ GHC.ppr aarg
@@ -163,11 +171,11 @@ parseCmd names ctx (L _ (HsCmdCase _ expr matchGroup)) =
                 return $ caseCont expr' apat bpat (second assoc acont) (second assoc bcont)
 
         L l _ -> Error $ \dflags ->
-            putError dflags (locA l) $ GHC.text "Overloaded:Categories only case of Left and Right are supported"
+            putPluginUsageErr dflags (locA l) $ GHC.text "Overloaded:Categories only case of Left and Right are supported"
                 GHC.$$ GHC.text (SYB.gshow (mg_alts matchGroup))
 parseCmd _     _   (L l cmd) =
     Error $ \dflags ->
-        putError dflags (locA l) $ GHC.text "Unsupported command in proc for Overloaded:Categories"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Unsupported command in proc for Overloaded:Categories"
             GHC.$$ GHC.ppr cmd
             GHC.$$ GHC.text (SYB.gshow cmd)
 
@@ -198,12 +206,12 @@ parseStmts names ctx _ [L _ (LastStmt _ body _ _)] =
     parseCmd names ctx body
 parseStmts _     _   _ (L l stmt : _) =
     Error $ \dflags ->
-        putError dflags (locA l) $ GHC.text "Unsupported statement in proc-do for Overloaded:Categories"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Unsupported statement in proc-do for Overloaded:Categories"
             GHC.$$ GHC.ppr stmt
             GHC.$$ GHC.text (SYB.gshow stmt)
 parseStmts _     _   l [] =
     Error $ \dflags ->
-        putError dflags (locA l) $ GHC.text "Empty do block in proc"
+        putPluginUsageErr dflags (locA l) $ GHC.text "Empty do block in proc"
 
 -------------------------------------------------------------------------------
 -- Variables

@@ -9,6 +9,9 @@ import Data.Maybe    (mapMaybe)
 import qualified GHC.Compat.All  as GHC
 
 import qualified GHC.Tc.Plugin as Plugins
+#if MIN_VERSION_ghc(9,4,0)
+import qualified GHC.Data.Strict as Strict
+#endif
 
 import Overloaded.Plugin.Diagnostics
 import Overloaded.Plugin.TcPlugin.Ctx
@@ -27,16 +30,17 @@ solveHasConstructor
     -> Plugins.TcPluginM [(Maybe (GHC.EvTerm, [GHC.Ct]), GHC.Ct)]
 solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
     forM wantedsHasPolyCon $ \(ct, tys@(V4 _k _name _s a)) -> do
-        -- Plugins.tcPluginIO $ warn dflags noSrcSpan $
-        --     GHC.text "HasConstructor wanted" GHC.<+> GHC.ppr ct
-
         m <- GHC.unsafeTcPluginTcM $ matchHasConstructor dflags famInstEnvs rdrEnv tys
         fmap (\evTerm -> (evTerm, ct)) $ forM m $ \(tc, dc, args, xs) -> do
             -- get location
             let ctloc = GHC.ctLoc ct
             let l = GHC.RealSrcSpan (GHC.ctLocSpan ctloc)
+#if MIN_VERSION_ghc(9,4,0)
+                        Strict.Nothing
+#else
                         Nothing
-            ifDebug $ tcWarn dflags l $
+#endif
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG1"
                     GHC.$$ GHC.ppr tc
                     GHC.$$ GHC.ppr dc
@@ -63,7 +67,7 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
             let tupleDataCon :: GHC.DataCon
                 tupleDataCon = GHC.tupleDataCon GHC.Boxed (length xs)
 
-            ifDebug $ tcWarn dflags l $
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG2"
                     GHC.$$ GHC.ppr s'
                     GHC.$$ GHC.ppr a'
@@ -91,7 +95,7 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
                         xs'                        -- x1 ... xn
                         ( GHC.mkConApp2 dc args xs')  -- DC x1 ... xn
 
-            ifDebug $ tcWarn dflags l $
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG-build"
                     GHC.$$ GHC.ppr exprBuild
 
@@ -137,7 +141,7 @@ solveHasConstructor PluginCtx {..} dflags famInstEnvs rdrEnv wanteds =
                             GHC.mkConApp2 GHC.justDataCon [a'] [aBndr])
                         ]
 
-            ifDebug $ tcWarn dflags l $
+            ifDebug $ tcPluginDebugMsg dflags l $
                 GHC.text "DEBUG-match"
                     GHC.$$ GHC.ppr exprMatch
 
