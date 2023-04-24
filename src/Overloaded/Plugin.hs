@@ -9,6 +9,7 @@ module Overloaded.Plugin (plugin) where
 import Control.Exception      (throwIO)
 import Control.Monad          (foldM, when)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.Function          (fix)
 import Data.List              (intercalate)
 import Data.List.Split        (splitOn)
 import Data.Maybe             (catMaybes)
@@ -801,42 +802,54 @@ transformRebindableApplication _ _ = NoRewrite
 -- RebindableAbstraction
 -------------------------------------------------------------------------------
 
--- lam2 :: (Lam f a f', Lam f' b c) => (a -> b -> c) -> f
--- lam2 f = lam $ \a -> lamRec (f a)
+-- We don't seem to need this, noSrcSpanA doesn't seem to ruin error messages.
+-- -- Voids the annotation from an annotated SrcSpan
+-- spanWithoutAnn :: GHC.SrcSpanAnn' a -> GHC.SrcAnn ann
+-- spanWithoutAnn l = noAnnSrcSpan $ locA l
 
-pointSpan :: GHC.SrcSpanAnn' a -> GHC.SrcAnn ann
-pointSpan l = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA l) (GHC.srcSpanStart $ locA l)
-
--- | Applies 'lam' to lambdas of any arity
-deepLam ::
+-- | Makes a completely point-free higher-arity lam, as a function expression.
+--
+--   mkLam 1 = lam
+--   mkLam n = (lam . (mkLam (n-1) .))
+--
+-- This needs to be embedded at use sites because we need to capture the local
+-- 'lam', possibly within some nested scope.
+--
+-- Could be done as a lambda without point-free style as well, but much care
+-- would be needed to avoid using existing variable names for the lambda
+-- parameters.
+-- Use sites could be nested deeply, so parameter names could collide with
+-- an enclosing or contained higher-arity 'lam'!
+--
+-- Note that the following is no viable alternative: Rewriting the original
+-- lambda into a chain of single-parameter lambdas would break pattern match
+-- fall-through behavior.
+mkLamN ::
   Plugins.RdrName ->
   Plugins.RdrName ->
-  GHC.SrcSpanAnn' (GHC.EpAnn GHC.AnnListItem) ->
-  LHsExpr GhcPs ->
   Int ->
   LHsExpr GhcPs
-deepLam lamName composeRdrName l f = go
+mkLamN lamName composeRdrName = fix $ \self -> \case
+    1 -> l (HsVar noExtField (l lamName))
+    n | n > 1 ->
+        hsPar noSrcSpanA
+        $ l $ OpApp noAnn
+            (l $ HsVar noExtField (l lamName))
+            (l $ HsVar noExtField (l composeRdrName))
+            (hsPar noSrcSpanA
+                (l $ HsApp noAnn
+                    (l (HsVar noExtField (l composeRdrName))) (self $ n - 1)))
+    _ -> error "mkLamN invalid depth"
     where
-        go = \case
-            1 -> appName lamName f
-            n | n > 1 ->
-                appName lamName
-                $ hsPar l
-                $ L l $ OpApp noAnn
-                  (go $ n - 1)
-                  (L (pointSpan l) $ HsVar noExtField (L (pointSpan l) composeRdrName))
-                  f
-            _ -> error "deepLam invalid depth"
-        appName :: Plugins.RdrName -> LHsExpr GhcPs -> LHsExpr GhcPs
-        appName name arg =
-            hsPar l
-            $ L l $ HsApp noAnn (L (pointSpan l) (HsVar noExtField (L (pointSpan l) name))) (hsPar l arg)
+    l = L noSrcSpanA
 
+-- TODO: match HsLamCase
+-- TODO: handle function binding
 transformRebindableAbstraction
     :: RdrNames
     -> LHsExpr GhcPs
     -> Rewrite (LHsExpr GhcPs)
-transformRebindableAbstraction RdrNames {..} lam@(L l (HsLam _ MG { mg_alts })) = do
+transformRebindableAbstraction RdrNames {..} lam@(L _ (HsLam _ MG { mg_alts })) = do
     let L _ matches = mg_alts
     case matches of
         -- not sure if arity 0 can exist in special cases, so not throwing an error
@@ -844,10 +857,9 @@ transformRebindableAbstraction RdrNames {..} lam@(L l (HsLam _ MG { mg_alts })) 
         (m:_) -> do
             let L _ Match { m_pats } = m
                 arity = length m_pats
-            -- TODO deepLam did not fix issues with multiple args (see TODOs in EDSL example).
-            -- hardcoded 1 here matches older behaivor, relying on replaced lambdas having only one arg each.
-            -- Rewrite $ deepLam lamName composeRdrName l lam arity
-            Rewrite $ deepLam lamName composeRdrName l lam 1
+            Rewrite $
+                L noSrcSpanA $
+                    HsApp noAnn (mkLamN lamName composeRdrName arity) (hsPar noSrcSpanA lam)
 transformRebindableAbstraction _ _ = NoRewrite
 
 -------------------------------------------------------------------------------

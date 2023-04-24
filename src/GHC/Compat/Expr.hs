@@ -1,6 +1,11 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 -- | THis module re-exports 'HsExpr' and few related data types.
 module GHC.Compat.Expr (
     -- * Expression
@@ -99,6 +104,25 @@ import Data.List (foldl')
 
 import qualified GHC.Compat.All as GHC
 
+----- Helpers for passes
+
+-- like IsPass, but without the instance for 'Typechecked
+class IsNonTcPass (p :: Pass) where
+    nonTcPass :: NonTcPass p
+
+instance IsNonTcPass 'Parsed where
+    nonTcPass = NonTcPassPs
+
+instance IsNonTcPass 'Renamed where
+    nonTcPass = NonTcPassRn
+
+-- like GhcPass, but without GhcTc
+data NonTcPass (p :: Pass) where
+    NonTcPassPs :: NonTcPass 'Parsed
+    NonTcPassRn :: NonTcPass 'Renamed
+
+-----
+
 -- | preserves NamenAnn
 hsVar :: SrcSpanAnnN -> GHC.Name -> LHsExpr GhcRn
 hsVar l n = L (l2l l) (HsVar noExtField (L l n))
@@ -131,7 +155,7 @@ hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
 hsTyApp_RDR :: SrcSpanAnnA -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
 hsTyApp_RDR l x ty = L l $ HsAppType noSrcSpan x (HsWC noExtField (L l ty))
 
-hsGrhs :: [GuardLStmt GhcRn] -> LHsExpr GhcRn -> LGRHS GhcRn (LHsExpr GhcRn)
+hsGrhs :: [GuardLStmt (GhcPass p)] -> LHsExpr (GhcPass p) -> LGRHS (GhcPass p) (LHsExpr (GhcPass p))
 hsGrhs guardStmts body =
 #if MIN_VERSION_ghc(9,4,0)
     L noSrcSpanA $ GRHS noAnn guardStmts body
@@ -139,10 +163,19 @@ hsGrhs guardStmts body =
     L noSrcSpan $ GRHS noAnn guardStmts body
 #endif
 
+-- varPat :: SrcSpanAnnA -> LPat GhcPs
+-- varPat l = L l $ VarPat noExtField (L (l2l l) _)
+
+noMgExt :: NonTcPass p -> XMG (GhcPass p) (LHsExpr (GhcPass p))
+noMgExt NonTcPassPs = noExtField
+noMgExt NonTcPassRn = noExtField
+
 -- | Construct simple lambda @\(pat) -> body@.
-hsLam :: SrcSpanAnnA -> LPat GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsLam ::
+    forall (p :: Pass). IsNonTcPass p =>
+    SrcSpanAnnA -> LPat (GhcPass p) -> LHsExpr (GhcPass p) -> LHsExpr (GhcPass p)
 hsLam l pat body = L l $ HsLam noExtField MG
-    { mg_ext    = noExtField
+    { mg_ext    = noMgExt (nonTcPass @p)
     , mg_alts   = L (l2l l) $ pure $ L l Match
         { m_ext   = noAnn
         , m_ctxt  = LambdaExpr

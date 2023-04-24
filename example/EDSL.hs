@@ -12,18 +12,17 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# OPTIONS -Wno-unused-top-binds -Wno-name-shadowing -Wno-missing-signatures
             -fplugin=Overloaded
-            -fplugin-opt=Overloaded:RebindableApplication=$
-            -fplugin-opt=Overloaded:RebindableAbstraction=lam
+            -fplugin-opt=Overloaded:RebindableApplication
+            -fplugin-opt=Overloaded:RebindableAbstraction
 #-}
 
 
 module Main (main) where
 
-import           Data.Kind                        (Type)
-import           Overloaded.RebindableAbstraction (Lam (lam))
-import           Overloaded.RebindableApplication
-                 (Apply (apply), ($))
-import           Prelude                          hiding (($))
+import Data.Kind                        (Type)
+import Overloaded.RebindableAbstraction (Lam (lam))
+import Overloaded.RebindableApplication (Apply (apply), ($))
+import Prelude                          hiding (($))
 
 main :: IO ()
 main = do
@@ -105,18 +104,11 @@ hintPFun = id
 herpa :: forall s. Term s PInt
 herpa = (hintPFun genericId) (1 :: Term s PInt)
 
-lam2 :: (Lam f a f', Lam f' b c) => (a -> b -> c) -> f
-lam2 f = \a -> lam (f a)
-
-lam3 f = \a -> lam2 (f a)
-
 -- Can work as both of those types:
 pconst :: Term s (a :--> b :--> a)
 -- pconst :: a -> b -> a
--- TODO broken, I suspect a GHC bug
--- pconst = \a _ -> a
--- Workaround:
-pconst = \a -> \_ -> a
+pconst = \a _ -> a
+-- pconst a _ = a
 
 pdouble :: Term s (PInt :--> PInt)
 pdouble = \x -> x + 1
