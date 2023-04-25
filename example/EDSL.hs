@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -15,7 +16,7 @@
             -fplugin=Overloaded
             -fplugin-opt=Overloaded:RebindableApplication
             -fplugin-opt=Overloaded:RebindableAbstraction
-#-}
+ #-}
 
 
 module Main (main) where
@@ -28,7 +29,10 @@ import Prelude                          hiding (($))
 main :: IO ()
 main = do
   -- print (foo :: Integer)
+-- We don't support rebindable function-bindings on 9.2
+#if MIN_VERSION_ghc(9,4,0)
   print $ pdouble2 2
+#endif
   print $ pdouble 2
   return ()
 
@@ -120,12 +124,15 @@ pconst = \a _ -> a
 pdouble :: Term s (PInt :--> PInt)
 pdouble = \x -> x * 2
 
+-- We don't support rebindable function-bindings on 9.2
+#if MIN_VERSION_ghc(9,4,0)
 -- demonstrates that internal conversion to lambda works even with multiple
 -- alternative patterns and where-bindings
 pdouble2 :: Term s (PInt :--> PInt)
 pdouble2 (Term (PInt 2)) = Term (PInt 7)
 pdouble2 x = bla x
   where bla = (* 2)
+#endif
 
 -- demonstrates lambda-case support
 pnot :: Term s (PInt :--> PInt)

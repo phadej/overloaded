@@ -870,7 +870,11 @@ transformRebindableAbstraction
     -> Rewrite (LHsExpr GhcPs)
 transformRebindableAbstraction rdrNames theLam@(L _ (HsLam _ matchGroup)) =
     transformLam rdrNames theLam matchGroup
+#if MIN_VERSION_ghc(9,4,0)
 transformRebindableAbstraction rdrNames theLam@(L _ (HsLamCase _ _ matchGroup)) =
+#else
+transformRebindableAbstraction rdrNames theLam@(L _ (HsLamCase _ matchGroup)) =
+#endif
     transformLam rdrNames theLam matchGroup
 transformRebindableAbstraction _ _ = NoRewrite
 
@@ -878,6 +882,8 @@ transformRebindableAbstractionBind
     :: RdrNames
     -> GHC.HsBind GhcPs
     -> Rewrite (GHC.HsBind GhcPs)
+-- This crashes GHC 9.2, probably due to lack of '\cases'
+#if MIN_VERSION_ghc(9,4,0)
 transformRebindableAbstractionBind RdrNames {..} orig_bind@(GHC.FunBind {fun_matches = orig_mg@MG { mg_alts }}) = do
     let L _ matches = mg_alts
     case matches of
@@ -916,6 +922,7 @@ transformRebindableAbstractionBind RdrNames {..} orig_bind@(GHC.FunBind {fun_mat
                 Rewrite $ orig_bind { GHC.fun_matches = outer_matches }
             else
                 NoRewrite
+#endif
 transformRebindableAbstractionBind _ _ = NoRewrite
 
 -------------------------------------------------------------------------------

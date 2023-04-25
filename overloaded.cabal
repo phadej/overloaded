@@ -191,6 +191,7 @@ test-suite example-edsl
 
   -- inherited dependencies
   build-depends:
+    , ghc
     , base
     , overloaded
 
