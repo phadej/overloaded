@@ -848,12 +848,12 @@ mkLamN lamName composeRdrName = fix $ \self -> \case
     where
     l = L noSrcSpanA
 
--- TODO: match HsLamCase
-transformRebindableAbstraction
+transformLam
     :: RdrNames
     -> LHsExpr GhcPs
+    -> MatchGroup GhcPs (LHsExpr GhcPs)
     -> Rewrite (LHsExpr GhcPs)
-transformRebindableAbstraction RdrNames {..} theLam@(L _ (HsLam _ MG { mg_alts })) = do
+transformLam RdrNames {..} theLam MG { mg_alts } = do
     let L _ matches = mg_alts
     case matches of
         [] -> NoRewrite
@@ -863,6 +863,15 @@ transformRebindableAbstraction RdrNames {..} theLam@(L _ (HsLam _ MG { mg_alts }
             Rewrite $
                 L noSrcSpanA $
                     HsApp noAnn (mkLamN lamName composeRdrName arity) (hsPar noSrcSpanA theLam)
+
+transformRebindableAbstraction
+    :: RdrNames
+    -> LHsExpr GhcPs
+    -> Rewrite (LHsExpr GhcPs)
+transformRebindableAbstraction rdrNames theLam@(L _ (HsLam _ matchGroup)) =
+    transformLam rdrNames theLam matchGroup
+transformRebindableAbstraction rdrNames theLam@(L _ (HsLamCase _ _ matchGroup)) =
+    transformLam rdrNames theLam matchGroup
 transformRebindableAbstraction _ _ = NoRewrite
 
 transformRebindableAbstractionBind

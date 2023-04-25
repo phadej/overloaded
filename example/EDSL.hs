@@ -50,6 +50,9 @@ instance Num (Term s PInt) where
   abs (Term (PInt a)) = Term (PInt (abs a))
   signum (Term (PInt a)) = Term (PInt (signum a))
 
+instance Eq (Term s PInt) where
+  (Term (PInt a)) == (Term (PInt b)) = a == b
+
 newtype ((a :: PType) :--> (b :: PType)) (s :: S) = PFun (a s -> b s)
 infixr 0 :-->
 
@@ -124,10 +127,11 @@ pdouble2 (Term (PInt 2)) = Term (PInt 7)
 pdouble2 x = bla x
   where bla = (* 2)
 
--- pnot :: Term s (PInt :--> PInt)
--- pnot = \case
---   0 -> 1
---   _ -> 0
+-- demonstrates lambda-case support
+pnot :: Term s (PInt :--> PInt)
+pnot = \case
+  0 -> 1
+  _ -> 0
 
 -- just confirming that normal haskell functions still work
 hsStrConcat :: String -> String -> String
