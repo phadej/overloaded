@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TemplateHaskell       #-}
@@ -27,6 +28,8 @@ import Prelude                          hiding (($))
 main :: IO ()
 main = do
   -- print (foo :: Integer)
+  print $ pdouble2 2
+  print $ pdouble 2
   return ()
 
 ----- Mockup imitation of Plutarch 1 surface syntax
@@ -107,8 +110,25 @@ herpa = (hintPFun genericId) (1 :: Term s PInt)
 -- Can work as both of those types:
 pconst :: Term s (a :--> b :--> a)
 -- pconst :: a -> b -> a
+-- and as both of those definitions:
 pconst = \a _ -> a
 -- pconst a _ = a
 
 pdouble :: Term s (PInt :--> PInt)
-pdouble = \x -> x + 1
+pdouble = \x -> x * 2
+
+-- demonstrates that internal conversion to lambda works even with multiple
+-- alternative patterns and where-bindings
+pdouble2 :: Term s (PInt :--> PInt)
+pdouble2 (Term (PInt 2)) = Term (PInt 7)
+pdouble2 x = bla x
+  where bla = (* 2)
+
+-- pnot :: Term s (PInt :--> PInt)
+-- pnot = \case
+--   0 -> 1
+--   _ -> 0
+
+-- just confirming that normal haskell functions still work
+hsStrConcat :: String -> String -> String
+hsStrConcat a b = a <> b

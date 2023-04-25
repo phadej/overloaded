@@ -358,12 +358,16 @@ parsedAction args _modSum pm = do
             let n = mkRdrName rn
             return $ transformRebindableApplication $ names { dollarName = n }
 
-    trRebindAbstr <- case optRebindAbstr of
-        Off -> return transformNoOp
-        On Nothing  -> return $ transformRebindableAbstraction names
+    (trRebindAbstr, trRebindAbstrDecl) <- case optRebindAbstr of
+        Off -> return (transformNoOp, transformNoOp)
+        On Nothing  -> return $
+            (transformRebindableAbstraction names
+            ,transformRebindableAbstractionBind names)
         On (Just rn) -> do
             let n = mkRdrName rn
-            return $ transformRebindableAbstraction names { lamName = n }
+            return $
+                (transformRebindableAbstraction names { lamName = n }
+                , transformRebindableAbstractionBind names { lamName = n })
 
     trConstructors <- case optConstructors of
         Off -> return transformNoOp
@@ -377,8 +381,9 @@ parsedAction args _modSum pm = do
             , trRebindAbstr
             , trConstructors
             ]
+        trDecl = trRebindAbstrDecl
 
-    hsmodule' <- transformPs dflags tr hsmodule
+    hsmodule' <- transformPs dflags tr trDecl hsmodule
     let pm' = pm { GHC.hpm_module = hsmodule' }
 
 #if MIN_VERSION_ghc(9,4,0)
@@ -844,23 +849,65 @@ mkLamN lamName composeRdrName = fix $ \self -> \case
     l = L noSrcSpanA
 
 -- TODO: match HsLamCase
--- TODO: handle function binding
 transformRebindableAbstraction
     :: RdrNames
     -> LHsExpr GhcPs
     -> Rewrite (LHsExpr GhcPs)
-transformRebindableAbstraction RdrNames {..} lam@(L _ (HsLam _ MG { mg_alts })) = do
+transformRebindableAbstraction RdrNames {..} theLam@(L _ (HsLam _ MG { mg_alts })) = do
     let L _ matches = mg_alts
     case matches of
-        -- not sure if arity 0 can exist in special cases, so not throwing an error
         [] -> NoRewrite
         (m:_) -> do
             let L _ Match { m_pats } = m
                 arity = length m_pats
             Rewrite $
                 L noSrcSpanA $
-                    HsApp noAnn (mkLamN lamName composeRdrName arity) (hsPar noSrcSpanA lam)
+                    HsApp noAnn (mkLamN lamName composeRdrName arity) (hsPar noSrcSpanA theLam)
 transformRebindableAbstraction _ _ = NoRewrite
+
+transformRebindableAbstractionBind
+    :: RdrNames
+    -> GHC.HsBind GhcPs
+    -> Rewrite (GHC.HsBind GhcPs)
+transformRebindableAbstractionBind RdrNames {..} orig_bind@(GHC.FunBind {fun_matches = orig_mg@MG { mg_alts }}) = do
+    let L _ matches = mg_alts
+    case matches of
+        [] -> NoRewrite
+        (first_match:_) -> do
+            let L _ Match { m_pats, m_ctxt } = first_match
+                arity = length m_pats
+                outer_matches =
+                    MG {
+                        mg_ext = noExtField,
+                        mg_origin = GHC.FromSource,
+                        mg_alts = L noSrcSpanA [L noSrcSpanA outer_match]
+                    }
+                outer_match = Match {
+                    m_ext = noAnn,
+                    -- Contains fixity and strictness and the function name once
+                    -- again. Not sure why this needs to be in each match.
+                    -- Having different ctxt in different matches doesn't make
+                    -- any sense, so it's probably the same value in all matches
+                    -- of a function.
+                    m_ctxt = m_ctxt,
+                    m_pats = [],
+                    m_grhss = GRHSs
+                        { grhssExt = GHC.emptyComments
+                        , grhssGRHSs = [L noSrcSpanA $ GRHS noAnn [] outer_expr]
+                        , grhssLocalBinds = EmptyLocalBinds GHC.NoExtField
+                        }
+                }
+                -- the original function transformed into a lambda (\cases)
+                theLam = L noSrcSpanA $ HsLamCase noAnn GHC.LamCases orig_mg
+                -- lamN applied to the lam, used in outer_match above
+                outer_expr =
+                    L noSrcSpanA $
+                        HsApp noAnn (mkLamN lamName composeRdrName arity) (hsPar noSrcSpanA theLam)
+            if arity >= 1 then
+                Rewrite $ orig_bind { GHC.fun_matches = outer_matches }
+            else
+                NoRewrite
+transformRebindableAbstractionBind _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- Constructors
@@ -922,23 +969,29 @@ transformRn dflags f = SYB.everywhereM (SYB.mkM transform') where
 transformPs
     :: GHC.DynFlags
     -> (LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs))
+    -> (GHC.HsBind GhcPs -> Rewrite (GHC.HsBind GhcPs))
     -> Located HsModule
     -> Plugins.Hsc (Located HsModule)
-transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
-    transform' e@(L _l _) = do
+transformPs dflags fExpr fBind hsmod =
+    SYB.everywhereM (SYB.mkM transformBind)
+        =<< SYB.everywhereM (SYB.mkM transformExpr) hsmod
+    where
+    transformExpr :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
+    transformExpr e@(L _l _) = do
         -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
         --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
-        go (f e)
-      where
-        go NoRewrite    = return e
-        go (Rewrite e') = return e'
-        go (Error err)  = do
-            err dflags
-            -- Hsc doesn't have MonadFail instance
-            liftIO $ throwIO $ userError "Error in Overloaded plugin"
-        go (WithName _kont) = do
-            liftIO $ throwIO $ userError "Error in Overloaded plugin: WithName in Ps transform"
+        rewrite (fExpr e) e
+    transformBind :: GHC.HsBind GhcPs -> Plugins.Hsc (GHC.HsBind GhcPs)
+    transformBind b = rewrite (fBind b) b
+    rewrite ::  Rewrite a -> a -> Plugins.Hsc a
+    rewrite NoRewrite e   = return e
+    rewrite (Rewrite e') _ = return e'
+    rewrite (Error err) _ = do
+        err dflags
+        -- Hsc doesn't have MonadFail instance
+        liftIO $ throwIO $ userError "Error in Overloaded plugin"
+    rewrite (WithName _kont) _ = do
+        liftIO $ throwIO $ userError "Error in Overloaded plugin: WithName in Ps transform"
 
 transformType
     :: GHC.DynFlags
