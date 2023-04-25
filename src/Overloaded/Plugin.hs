@@ -891,27 +891,26 @@ transformRebindableAbstractionBind RdrNames {..} orig_bind@(GHC.FunBind {fun_mat
         (first_match:_) -> do
             let L _ Match { m_pats, m_ctxt } = first_match
                 arity = length m_pats
-                outer_matches =
-                    MG {
-                        mg_ext = noExtField,
-                        mg_origin = GHC.FromSource,
-                        mg_alts = L noSrcSpanA [L noSrcSpanA outer_match]
+                outer_matches = MG
+                    { mg_ext = noExtField
+                    , mg_origin = GHC.FromSource
+                    , mg_alts = L noSrcSpanA [L noSrcSpanA outer_match]
                     }
-                outer_match = Match {
-                    m_ext = noAnn,
+                outer_match = Match
+                    { m_ext = noAnn
                     -- Contains fixity and strictness and the function name once
                     -- again. Not sure why this needs to be in each match.
                     -- Having different ctxt in different matches doesn't make
                     -- any sense, so it's probably the same value in all matches
                     -- of a function.
-                    m_ctxt = m_ctxt,
-                    m_pats = [],
-                    m_grhss = GRHSs
+                    , m_ctxt = m_ctxt
+                    , m_pats = []
+                    , m_grhss = GRHSs
                         { grhssExt = GHC.emptyComments
                         , grhssGRHSs = [L noSrcSpanA $ GRHS noAnn [] outer_expr]
                         , grhssLocalBinds = EmptyLocalBinds GHC.NoExtField
                         }
-                }
+                    }
                 -- the original function transformed into a lambda (\cases)
                 theLam = L noSrcSpanA $ HsLamCase noAnn GHC.LamCases orig_mg
                 -- lamN applied to the lam, used in outer_match above
