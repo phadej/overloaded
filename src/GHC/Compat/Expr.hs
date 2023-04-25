@@ -1,10 +1,23 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 -- | THis module re-exports 'HsExpr' and few related data types.
 module GHC.Compat.Expr (
     -- * Expression
     HsExpr (..),
     LHsExpr,
+#if MIN_VERSION_ghc(9,4,0)
+    HsBracketTc (..),
+    HsQuote (..),
+    HsDoFlavour (..),
+#else
     HsBracket (..),
+#endif
     HsStmtContext (..),
     StmtLR (..),
     ExprLStmt,
@@ -16,6 +29,7 @@ module GHC.Compat.Expr (
     HsLocalBindsLR (..),
     -- ** Constructors
     hsVar,
+    hsVarA,
     hsApps,
     hsApps_RDR,
     hsTyApp,
@@ -49,11 +63,7 @@ module GHC.Compat.Expr (
     HsType (..),
     LHsType,
     HsWildCardBndrs (..),
-#if MIN_VERSION_ghc(8,8,0)
     PromotionFlag (..),
-#else
-    Promoted (..),
-#endif
     -- * Statements
     HsGroup,
     HsModule,
@@ -64,103 +74,128 @@ module GHC.Compat.Expr (
     Located,
     GenLocated (..),
     SrcSpan (..),
+    SrcSpanAnnA,
+    SrcSpanAnnN,
     RealSrcSpan,
+    l2l,
+    locA,
+    noAnn,
+    noAnnSrcSpan,
     noSrcSpan,
-    srcSpanStartLine,
+    noSrcSpanA,
+    srcSpanEndCol,
     srcSpanEndLine,
     srcSpanStartCol,
-    srcSpanEndCol,
+    srcSpanStartLine,
     -- * Extensions
     noExtField,
     -- * Names
     nameToString,
 ) where
 
-#if MIN_VERSION_ghc(8,10,0)
 import GHC.Hs
-#else
-import HsSyn
-#endif
-
-#if MIN_VERSION_ghc(9,0,0)
 import GHC.Types.Basic (PromotionFlag (..))
-#elif MIN_VERSION_ghc(8,8,0)
-import BasicTypes (PromotionFlag (..))
-#endif
 
-#if MIN_VERSION_ghc(9,0,0)
 import GHC.Types.SrcLoc
        (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
        srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
-#else
-import SrcLoc
-       (GenLocated (..), Located, RealSrcSpan, SrcSpan (..), noSrcSpan,
-       srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine)
-#endif
 
 import Data.List (foldl')
 
 import qualified GHC.Compat.All as GHC
 
-#if !(MIN_VERSION_ghc(8,10,0))
-noExtField  :: NoExt
-noExtField = noExt
-#endif
+----- Helpers for passes
 
-hsVar :: SrcSpan -> GHC.Name -> LHsExpr GhcRn
-hsVar l n = L l (HsVar noExtField (L l n))
+-- like IsPass, but without the instance for 'Typechecked
+class IsNonTcPass (p :: Pass) where
+    nonTcPass :: NonTcPass p
 
-hsTyVar :: SrcSpan -> GHC.Name -> HsType GhcRn
-hsTyVar l n = HsTyVar noExtField NotPromoted (L l n)
+instance IsNonTcPass 'Parsed where
+    nonTcPass = NonTcPassPs
 
-hsApps :: SrcSpan -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
+instance IsNonTcPass 'Renamed where
+    nonTcPass = NonTcPassRn
+
+-- like GhcPass, but without GhcTc
+data NonTcPass (p :: Pass) where
+    NonTcPassPs :: NonTcPass 'Parsed
+    NonTcPassRn :: NonTcPass 'Renamed
+
+-----
+
+-- | preserves NamenAnn
+hsVar :: SrcSpanAnnN -> GHC.Name -> LHsExpr GhcRn
+hsVar l n = L (l2l l) (HsVar noExtField (L l n))
+
+-- | preserves AnnListItem
+hsVarA :: SrcSpanAnnA -> GHC.Name -> LHsExpr GhcRn
+hsVarA l n = L l (HsVar noExtField (L (l2l l) n))
+
+hsTyVar :: SrcSpanAnnN -> GHC.Name -> HsType GhcRn
+hsTyVar l n = HsTyVar noAnn NotPromoted (L l n)
+
+hsApps :: SrcSpanAnnA -> LHsExpr GhcRn -> [LHsExpr GhcRn] -> LHsExpr GhcRn
 hsApps l = foldl' app where
     app :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
-    app f x = L l (HsApp noExtField f x)
+    app f x = L l (HsApp noAnn f x)
 
 
 
-hsApps_RDR :: SrcSpan -> LHsExpr GhcPs -> [LHsExpr GhcPs] -> LHsExpr GhcPs
+hsApps_RDR :: SrcSpanAnnA -> LHsExpr GhcPs -> [LHsExpr GhcPs] -> LHsExpr GhcPs
 hsApps_RDR l = foldl' app where
     app :: LHsExpr GhcPs -> LHsExpr GhcPs -> LHsExpr GhcPs
-    app f x = L l (HsApp noExtField f x)
+    app f x = L l (HsApp noAnn f x)
 
-hsOpApp :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsOpApp :: SrcSpanAnnA -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 hsOpApp l x op y = L l (OpApp GHC.defaultFixity x op y)
 
-hsTyApp :: SrcSpan -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
-#if MIN_VERSION_ghc(8,8,0)
+hsTyApp :: SrcSpanAnnA -> LHsExpr GhcRn -> HsType GhcRn -> LHsExpr GhcRn
 hsTyApp l x ty = L l $ HsAppType noExtField x (HsWC [] (L l ty))
+
+hsTyApp_RDR :: SrcSpanAnnA -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
+hsTyApp_RDR l x ty = L l $ HsAppType noSrcSpan x (HsWC noExtField (L l ty))
+
+hsGrhs :: [GuardLStmt (GhcPass p)] -> LHsExpr (GhcPass p) -> LGRHS (GhcPass p) (LHsExpr (GhcPass p))
+hsGrhs guardStmts body =
+#if MIN_VERSION_ghc(9,4,0)
+    L noSrcSpanA $ GRHS noAnn guardStmts body
 #else
-hsTyApp l x ty = L l $ HsAppType (HsWC [] (L l ty)) x
+    L noSrcSpan $ GRHS noAnn guardStmts body
 #endif
 
-hsTyApp_RDR :: SrcSpan -> LHsExpr GhcPs -> HsType GhcPs -> LHsExpr GhcPs
-#if MIN_VERSION_ghc(8,8,0)
-hsTyApp_RDR l x ty = L l $ HsAppType noExtField x (HsWC noExtField (L l ty))
-#else
-hsTyApp_RDR l x ty = L l $ HsAppType (HsWC noExtField (L l ty)) x
-#endif
+-- varPat :: SrcSpanAnnA -> LPat GhcPs
+-- varPat l = L l $ VarPat noExtField (L (l2l l) _)
+
+noMgExt :: NonTcPass p -> XMG (GhcPass p) (LHsExpr (GhcPass p))
+noMgExt NonTcPassPs = noExtField
+noMgExt NonTcPassRn = noExtField
 
 -- | Construct simple lambda @\(pat) -> body@.
-hsLam :: SrcSpan -> LPat GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+hsLam ::
+    forall (p :: Pass). IsNonTcPass p =>
+    SrcSpanAnnA -> LPat (GhcPass p) -> LHsExpr (GhcPass p) -> LHsExpr (GhcPass p)
 hsLam l pat body = L l $ HsLam noExtField MG
-    { mg_ext    = noExtField
-    , mg_alts   = L l $ pure $ L l Match
-        { m_ext   = noExtField
+    { mg_ext    = noMgExt (nonTcPass @p)
+    , mg_alts   = L (l2l l) $ pure $ L l Match
+        { m_ext   = noAnn
         , m_ctxt  = LambdaExpr
         , m_pats  = [pat]
         , m_grhss = GRHSs
-            { grhssExt        = noExtField
-            , grhssGRHSs      = [ L noSrcSpan $ GRHS noExtField [] body ]
-            , grhssLocalBinds = L noSrcSpan $ EmptyLocalBinds noExtField
+            { grhssExt        = emptyComments
+            , grhssGRHSs      = [ hsGrhs [] body ]
+            , grhssLocalBinds = EmptyLocalBinds noExtField
             }
         }
     , mg_origin = GHC.Generated
     }
 
-hsPar :: SrcSpan -> LHsExpr GhcRn -> LHsExpr GhcRn
-hsPar l e = L l (HsPar noExtField e)
+hsPar :: SrcSpanAnnA -> LHsExpr (GhcPass p) -> LHsExpr (GhcPass p)
+hsPar l e =
+#if MIN_VERSION_ghc(9,4,0)
+    L l (HsPar noAnn (L NoTokenLoc (HsTok @"(")) e (L NoTokenLoc (HsTok @")")))
+#else
+    L l (HsPar noAnn e)
+#endif
 
 nameToString :: GHC.Name -> String
 nameToString = GHC.occNameString . GHC.occName

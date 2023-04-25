@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE RankNTypes #-}
 module Overloaded.Plugin.Rewrite where
 
 import Control.Monad (ap)
 
 import qualified GHC.Compat.All  as GHC
+import Control.Monad.IO.Class (MonadIO)
 
 -------------------------------------------------------------------------------
 -- Rewrite
@@ -13,7 +15,8 @@ data Rewrite a
     = NoRewrite
     | Rewrite a -- TODO: add warnings
     | WithName (GHC.Name -> Rewrite a)
-    | Error (GHC.DynFlags -> IO ())
+    -- TODO: could use HasDynFlags instead
+    | Error (forall m. (MonadIO m, GHC.HasLogger m) => GHC.DynFlags -> m ())
   deriving (Functor)
 
 instance Semigroup (Rewrite a) where
@@ -29,7 +32,6 @@ instance Applicative Rewrite where
     (<*>) = ap
 
 instance Monad Rewrite where
-    return = Rewrite
     NoRewrite >>= _ = NoRewrite
     Rewrite a >>= k = k a
     WithName f >>= k = WithName (\n -> f n >>= k)

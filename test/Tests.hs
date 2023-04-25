@@ -14,6 +14,7 @@ import qualified Overloaded.Test.Lists                  as Lst
 import qualified Overloaded.Test.Lists.Bidi             as Lst.Bidi
 import qualified Overloaded.Test.Naturals               as Nat
 import qualified Overloaded.Test.Numerals               as Num
+import qualified Overloaded.Test.RebindableAbstraction  as Rab
 import qualified Overloaded.Test.RebindableApplications as Rba
 import qualified Overloaded.Test.RecordFields           as Rec
 import qualified Overloaded.Test.Strings                as Str
@@ -38,6 +39,7 @@ main = defaultMain $ testGroup "Tests"
     , GL.tests
     , Cat.tests
     , Rba.tests
+    , Rab.tests
     , Rec.tests
     , Con.tests
     ]

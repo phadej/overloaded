@@ -25,7 +25,7 @@ instance CategoryWith1 AD where
     terminal = AD $ \_ -> ((), \_ -> ())
 
 instance CartesianCategory AD where
-    type Product AD = (,) 
+    type Product AD = (,)
 
     proj1 = linearD fst
     proj2 = linearD snd
@@ -44,7 +44,7 @@ mult :: Num a => AD (a, a) a
 mult = AD $ \(x,y) -> (x * y, \(dx, dy) -> dx * y + dy * x)
 
 ex1 :: AD Double Double
-ex1 = plus %% fanout identity identity 
+ex1 = plus %% fanout identity identity
 
 ex2 :: AD Double Double
 ex2 = mult %% fanout identity identity

@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Overloaded plugin, which makes magic possible.
@@ -7,6 +9,7 @@ module Overloaded.Plugin (plugin) where
 import Control.Exception      (throwIO)
 import Control.Monad          (foldM, when)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.Function          (fix)
 import Data.List              (intercalate)
 import Data.List.Split        (splitOn)
 import Data.Maybe             (catMaybes)
@@ -17,11 +20,7 @@ import qualified Data.Generics as SYB
 import qualified GHC.Compat.All  as GHC
 import           GHC.Compat.Expr
 
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Plugins as Plugins
-#else
-import qualified GhcPlugins as Plugins
-#endif
 
 import Overloaded.Plugin.Categories
 import Overloaded.Plugin.Diagnostics
@@ -197,7 +196,7 @@ renamedAction args' env gr = do
     names <- getNames dflags topEnv
     opts@Options {..} <- parseArgs dflags args
     when (opts == defaultOptions) $
-        warn dflags noSrcSpan $ GHC.text "No Overloaded features enabled"
+        putPluginUsageWarn dflags noSrcSpan $ GHC.text "No Overloaded features enabled"
 
     let transformNoOp :: a -> Rewrite a
         transformNoOp _ = NoRewrite
@@ -322,13 +321,23 @@ renamedAction args' env gr = do
 -- Parsed Action
 -------------------------------------------------------------------------------
 
+#if MIN_VERSION_ghc(9,4,0)
 parsedAction
     :: [Plugins.CommandLineOption]
     -> Plugins.ModSummary
-    -> Plugins.HsParsedModule
-    -> Plugins.Hsc Plugins.HsParsedModule
+    -> Plugins.ParsedResult
+    -> Plugins.Hsc Plugins.ParsedResult
+parsedAction args _modSum pr = do
+    let pm = Plugins.parsedResultModule pr
+#else
+parsedAction
+    :: [Plugins.CommandLineOption]
+    -> Plugins.ModSummary
+    -> GHC.HsParsedModule
+    -> Plugins.Hsc GHC.HsParsedModule
 parsedAction args _modSum pm = do
-    let hsmodule = Plugins.hpm_module pm
+#endif
+    let hsmodule = GHC.hpm_module pm
     topEnv <- GHC.Hsc $ \env warnMsgs -> return (env, warnMsgs)
 
     dflags <- GHC.getDynFlags
@@ -349,6 +358,17 @@ parsedAction args _modSum pm = do
             let n = mkRdrName rn
             return $ transformRebindableApplication $ names { dollarName = n }
 
+    (trRebindAbstr, trRebindAbstrDecl) <- case optRebindAbstr of
+        Off -> return (transformNoOp, transformNoOp)
+        On Nothing  -> return $
+            (transformRebindableAbstraction names
+            ,transformRebindableAbstractionBind names)
+        On (Just rn) -> do
+            let n = mkRdrName rn
+            return $
+                (transformRebindableAbstraction names { lamName = n }
+                , transformRebindableAbstractionBind names { lamName = n })
+
     trConstructors <- case optConstructors of
         Off -> return transformNoOp
         On Nothing -> return $ transformConstructors names
@@ -358,22 +378,28 @@ parsedAction args _modSum pm = do
 
     let tr  = mconcat
             [ trRebindApp
+            , trRebindAbstr
             , trConstructors
             ]
+        trDecl = trRebindAbstrDecl
 
-    hsmodule' <- transformPs dflags tr hsmodule
-    let pm' = pm { Plugins.hpm_module = hsmodule' }
+    hsmodule' <- transformPs dflags tr trDecl hsmodule
+    let pm' = pm { GHC.hpm_module = hsmodule' }
 
+#if MIN_VERSION_ghc(9,4,0)
+    return pr { Plugins.parsedResultModule = pm' }
+#else
     return pm'
+#endif
 
 -------------------------------------------------------------------------------
 -- Args parsing
 -------------------------------------------------------------------------------
 
-parseArgs :: forall m. MonadIO m => GHC.DynFlags -> [String] -> m Options
+parseArgs :: forall m. (MonadIO m, GHC.HasLogger m) => GHC.DynFlags -> [String] -> m Options
 parseArgs dflags = foldM go0 defaultOptions where
     ambWarn :: String -> String -> m ()
-    ambWarn x y = warn dflags noSrcSpan $
+    ambWarn x y = putPluginUsageWarn dflags noSrcSpan $
         GHC.text ("Overloaded:" ++ x ++ " and Overloaded:" ++ y ++ " enabled")
         GHC.$$
         GHC.text ("picking Overloaded:" ++ y)
@@ -455,12 +481,15 @@ parseArgs dflags = foldM go0 defaultOptions where
     go opts "RebindableApplication" vns = do
         mrn <- oneName "RebindableApplication" vns
         return $ opts { optRebindApp = On mrn }
+    go opts "RebindableAbstraction" vns = do
+        mrn <- oneName "RebindableAbstraction" vns
+        return $ opts { optRebindAbstr = On mrn }
     go opts "Constructors" vns = do
         mrn <- oneName "Constructors" vns
         return $ opts { optConstructors = On mrn }
 
     go opts s _ = do
-        warn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
+        putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Unknown Overloaded option " ++  show s
         return opts
 
     oneName :: [Char] -> [a] -> m (Maybe a)
@@ -468,17 +497,17 @@ parseArgs dflags = foldM go0 defaultOptions where
         []     -> return Nothing
         [vn]   -> return (Just vn)
         (vn:_) -> do
-            warn dflags noSrcSpan $ GHC.text $ "Multiple desugaring names specified for " ++ arg
+            putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Multiple desugaring names specified for " ++ arg
             return (Just vn)
 
     twoNames arg vns = case vns of
         []  -> return Nothing
         [_] -> do
-            warn dflags noSrcSpan $ GHC.text $ "Only single desugaring name specified for " ++ arg
+            putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Only single desugaring name specified for " ++ arg
             return Nothing
         [x,y]   -> return (Just (V2 x y))
         (x:y:_) -> do
-            warn dflags noSrcSpan $ GHC.text $ "Over two names specified for " ++ arg
+            putPluginUsageWarn dflags noSrcSpan $ GHC.text $ "Over two names specified for " ++ arg
             return (Just (V2 x y))
 
     elaborateArg :: String -> m (String, [VarName])
@@ -509,6 +538,7 @@ data Options = Options
     , optDo            :: Bool
     , optCategories    :: OnOff String -- module name
     , optRebindApp     :: OnOff VarName
+    , optRebindAbstr   :: OnOff VarName
     , optConstructors  :: OnOff VarName
     }
   deriving (Eq, Show)
@@ -529,6 +559,7 @@ defaultOptions = Options
     , optDo            = False
     , optCategories    = Off
     , optRebindApp     = Off
+    , optRebindAbstr   = Off
     , optConstructors  = Off
     }
 
@@ -590,7 +621,7 @@ data OnOff a
 
 transformStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) =
-    Rewrite $ hsApps l (hsVar l fromStringName) [e]
+    Rewrite $ hsApps l (hsVarA l fromStringName) [e]
 
 transformStrings _ _ = NoRewrite
 
@@ -600,7 +631,7 @@ transformStrings _ _ = NoRewrite
 
 transformSymbols :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformSymbols Names {..} (L l (HsLit _ (HsString _ fs))) = do
-    let name' = hsVar l fromSymbolName
+    let name' = hsVarA l fromSymbolName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     Rewrite inner
 
@@ -612,8 +643,8 @@ transformSymbols _ _ = NoRewrite
 
 transformCodeStrings :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformCodeStrings Names {..} e@(L l (HsLit _ (HsString _ _fs))) = do
-    let inner = hsApps l (hsVar l codeFromStringName) [e]
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
+    let inner = hsApps l (hsVarA l codeFromStringName) [e]
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noAnn $ HsTypedSplice noAnn hasParens n inner
 
 transformCodeStrings _ _ = NoRewrite
 
@@ -622,9 +653,13 @@ transformCodeStrings _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformNumerals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+#if MIN_VERSION_ghc(9,4,0)
+transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)))))
+#else
 transformNumerals Names {..} (L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
+#endif
     | not n, i >= 0 = do
-        let name' = hsVar l fromNumeralName
+        let name' = hsVarA l fromNumeralName
         let inner = hsTyApp l name' (HsTyLit noExtField (HsNumTy GHC.NoSourceText i))
         Rewrite inner
 
@@ -635,10 +670,14 @@ transformNumerals _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformNaturals :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
+#if MIN_VERSION_ghc(9,4,0)
+transformNaturals Names {..} e@(L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)))))
+#else
 transformNaturals Names {..} e@(L l (HsOverLit _ (OverLit _ (HsIntegral (GHC.IL _ n i)) _)))
+#endif
     | not n
     , i >= 0
-    = Rewrite $ hsApps l (hsVar l fromNaturalName) [e]
+    = Rewrite $ hsApps l (hsVarA l fromNaturalName) [e]
 
 transformNaturals _ _ = NoRewrite
 
@@ -648,7 +687,7 @@ transformNaturals _ _ = NoRewrite
 
 transformChars :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformChars Names {..} e@(L l (HsLit _ (HsChar _ _))) =
-    Rewrite $ hsApps l (hsVar l fromCharName) [e]
+    Rewrite $ hsApps l (hsVarA l fromCharName) [e]
 
 transformChars _ _ = NoRewrite
 
@@ -657,14 +696,14 @@ transformChars _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformLists :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-transformLists Names {..} (L l (ExplicitList _ Nothing xs)) =
+transformLists Names {..} (L l (ExplicitList _  xs)) =
     Rewrite $ foldr cons' nil' xs
   where
     cons' :: LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
-    cons' y ys = hsApps l (hsVar l consName) [y, ys]
+    cons' y ys = hsApps l (hsVarA l consName) [y, ys]
 
     nil' :: LHsExpr GhcRn
-    nil' = hsVar l nilName
+    nil' = hsVarA l nilName
 
     -- otherwise: leave intact
 transformLists _ _ = NoRewrite
@@ -674,15 +713,11 @@ transformLists _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformIf :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-#if MIN_VERSION_ghc(9,0,0)
 transformIf Names {..} (L l (HsIf _ co th el)) = Rewrite val4 where
-#else
-transformIf Names {..} (L l (HsIf _ _ co th el)) = Rewrite val4 where
-#endif
-    val4 = L l $ HsApp noExtField val3 el
-    val3 = L l $ HsApp noExtField val2 th
-    val2 = L l $ HsApp noExtField val1 co
-    val1 = L l $ HsVar noExtField $ L l ifteName
+    val4 = L l $ HsApp noAnn val3 el
+    val3 = L l $ HsApp noAnn val2 th
+    val2 = L l $ HsApp noAnn val1 co
+    val1 = L l $ HsVar noExtField $ L (l2l l) ifteName
 transformIf _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
@@ -690,8 +725,8 @@ transformIf _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 transformLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-transformLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
-    let name' = hsVar l fromLabelName
+transformLabels Names {..} (L l (HsOverLabel _ fs)) = do
+    let name' = hsVarA l fromLabelName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     Rewrite inner
 
@@ -702,18 +737,14 @@ transformLabels _ _ = NoRewrite
 -------------------------------------------------------------------------------
 
 hasParens :: SpliceDecoration
-#if MIN_VERSION_ghc(9,0,0)
 hasParens = DollarSplice
-#else
-hasParens = HasParens
-#endif
 
 transformCodeLabels :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
-transformCodeLabels Names {..} (L l (HsOverLabel _ Nothing fs)) = do
-    let name' = hsVar l codeFromLabelName
+transformCodeLabels Names {..} (L l (HsOverLabel _ fs)) = do
+    let name' = hsVarA l codeFromLabelName
     let inner = hsTyApp l name' (HsTyLit noExtField (HsStrTy GHC.NoSourceText fs))
     -- Rewrite $ L l $ HsRnBracketOut noExtField (ExpBr noExtField inner) []
-    WithName $ \n -> Rewrite $ L l $ HsSpliceE noExtField $ HsTypedSplice noExtField hasParens n inner
+    WithName $ \n -> Rewrite $ L l $ HsSpliceE noAnn $ HsTypedSplice noAnn hasParens n inner
 
 transformCodeLabels _ _ = NoRewrite
 
@@ -723,7 +754,7 @@ transformCodeLabels _ _ = NoRewrite
 
 transformUnit :: Names -> LHsExpr GhcRn -> Rewrite (LHsExpr GhcRn)
 transformUnit Names {..} (L l (HsVar _ (L _ name')))
-    | name' == ghcUnitName = Rewrite (hsVar l unitName)
+    | name' == ghcUnitName = Rewrite (hsVarA l unitName)
   where
     ghcUnitName = GHC.getName (GHC.tupleDataCon GHC.Boxed 0)
 
@@ -735,7 +766,7 @@ transformUnit _ _ = NoRewrite
 
 transformTypeNats :: Names -> LHsType GhcRn -> Rewrite (LHsType GhcRn)
 transformTypeNats Names {..} e@(L l (HsTyLit _ (HsNumTy _ _))) = do
-    let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeNatName
+    let name' = L l $ HsTyVar noAnn NotPromoted $ L (l2l l) fromTypeNatName
     Rewrite $ L l $ HsAppTy noExtField name' e
 transformTypeNats _ _ = NoRewrite
 
@@ -745,7 +776,7 @@ transformTypeNats _ _ = NoRewrite
 
 transformTypeSymbols :: Names -> LHsType GhcRn -> Rewrite (LHsType GhcRn)
 transformTypeSymbols Names {..} e@(L l (HsTyLit _ (HsStrTy _ _))) = do
-    let name' = L l $ HsTyVar noExtField NotPromoted $ L l fromTypeSymbolName
+    let name' = L l $ HsTyVar noAnn NotPromoted $ L (l2l l) fromTypeSymbolName
     Rewrite $ L l $ HsAppTy noExtField name' e
 transformTypeSymbols _ _ = NoRewrite
 
@@ -756,11 +787,142 @@ transformTypeSymbols _ _ = NoRewrite
 transformRebindableApplication :: RdrNames -> LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs)
 transformRebindableApplication RdrNames {..} (L l (HsApp _ f@(L fl _) x@(L xl _)))
     = Rewrite
-    $ L l $ HsPar noExtField
-    $ L l $ OpApp noExtField f (L l' (HsVar noExtField (L l' dollarName))) x
+    $ hsPar l
+    $ L l $ OpApp noAnn f (L l' (HsVar noExtField (L l' dollarName))) x
   where
-    l' = GHC.mkSrcSpan (GHC.srcSpanEnd fl) (GHC.srcSpanStart xl)
+    l' = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA fl) (GHC.srcSpanStart $ locA xl)
+transformRebindableApplication RdrNames {..} (L l (OpApp _ x@(L xl _) f@(L _fl fEx) y@(L yl _)))
+    = case fEx of
+        HsVar _ (L _ fName) | fName == dollarName -> NoRewrite
+        _ -> Rewrite
+            $ hsPar l
+            $ (hsPar l $ f `app` x) `app` y
+  where
+    l' = noAnnSrcSpan $ GHC.mkSrcSpan (GHC.srcSpanEnd $ locA xl) (GHC.srcSpanStart $ locA yl)
+    app :: LHsExpr GhcPs -> LHsExpr GhcPs -> LHsExpr GhcPs
+    app fun a = L l $ OpApp noAnn fun (L l' (HsVar noExtField (L l' dollarName))) a
 transformRebindableApplication _ _ = NoRewrite
+
+-------------------------------------------------------------------------------
+-- RebindableAbstraction
+-------------------------------------------------------------------------------
+
+-- We don't seem to need this, noSrcSpanA doesn't seem to ruin error messages.
+-- -- Voids the annotation from an annotated SrcSpan
+-- spanWithoutAnn :: GHC.SrcSpanAnn' a -> GHC.SrcAnn ann
+-- spanWithoutAnn l = noAnnSrcSpan $ locA l
+
+-- | Makes a completely point-free higher-arity lam, as a function expression.
+--
+--   mkLam 1 = lam
+--   mkLam n = (lam . (mkLam (n-1) .))
+--
+-- This needs to be embedded at use sites because we need to capture the local
+-- 'lam', possibly within some nested scope.
+--
+-- Could be done as a lambda without point-free style as well, but much care
+-- would be needed to avoid using existing variable names for the lambda
+-- parameters.
+-- Use sites could be nested deeply, so parameter names could collide with
+-- an enclosing or contained higher-arity 'lam'!
+--
+-- Note that the following is no viable alternative: Rewriting the original
+-- lambda into a chain of single-parameter lambdas would break pattern match
+-- fall-through behavior.
+mkLamN ::
+  Plugins.RdrName ->
+  Plugins.RdrName ->
+  Int ->
+  LHsExpr GhcPs
+mkLamN lamName composeRdrName = fix $ \self -> \case
+    1 -> l (HsVar noExtField (l lamName))
+    n | n > 1 ->
+        hsPar noSrcSpanA
+        $ l $ OpApp noAnn
+            (l $ HsVar noExtField (l lamName))
+            (l $ HsVar noExtField (l composeRdrName))
+            (hsPar noSrcSpanA
+                (l $ HsApp noAnn
+                    (l (HsVar noExtField (l composeRdrName))) (self $ n - 1)))
+    _ -> error "mkLamN invalid depth"
+    where
+    l = L noSrcSpanA
+
+transformLam
+    :: RdrNames
+    -> LHsExpr GhcPs
+    -> MatchGroup GhcPs (LHsExpr GhcPs)
+    -> Rewrite (LHsExpr GhcPs)
+transformLam RdrNames {..} theLam MG { mg_alts } = do
+    let L _ matches = mg_alts
+    case matches of
+        [] -> NoRewrite
+        (m:_) -> do
+            let L _ Match { m_pats } = m
+                arity = length m_pats
+            Rewrite $
+                L noSrcSpanA $
+                    HsApp noAnn (mkLamN lamName composeRdrName arity) (hsPar noSrcSpanA theLam)
+
+transformRebindableAbstraction
+    :: RdrNames
+    -> LHsExpr GhcPs
+    -> Rewrite (LHsExpr GhcPs)
+transformRebindableAbstraction rdrNames theLam@(L _ (HsLam _ matchGroup)) =
+    transformLam rdrNames theLam matchGroup
+#if MIN_VERSION_ghc(9,4,0)
+transformRebindableAbstraction rdrNames theLam@(L _ (HsLamCase _ _ matchGroup)) =
+#else
+transformRebindableAbstraction rdrNames theLam@(L _ (HsLamCase _ matchGroup)) =
+#endif
+    transformLam rdrNames theLam matchGroup
+transformRebindableAbstraction _ _ = NoRewrite
+
+transformRebindableAbstractionBind
+    :: RdrNames
+    -> GHC.HsBind GhcPs
+    -> Rewrite (GHC.HsBind GhcPs)
+-- This crashes GHC 9.2, probably due to lack of '\cases'
+#if MIN_VERSION_ghc(9,4,0)
+transformRebindableAbstractionBind RdrNames {..} orig_bind@(GHC.FunBind {fun_matches = orig_mg@MG { mg_alts }}) = do
+    let L _ matches = mg_alts
+    case matches of
+        [] -> NoRewrite
+        (first_match:_) -> do
+            let L _ Match { m_pats, m_ctxt } = first_match
+                arity = length m_pats
+                outer_matches = MG
+                    { mg_ext = noExtField
+                    , mg_origin = GHC.FromSource
+                    , mg_alts = L noSrcSpanA [L noSrcSpanA outer_match]
+                    }
+                outer_match = Match
+                    { m_ext = noAnn
+                    -- Contains fixity and strictness and the function name once
+                    -- again. Not sure why this needs to be in each match.
+                    -- Having different ctxt in different matches doesn't make
+                    -- any sense, so it's probably the same value in all matches
+                    -- of a function.
+                    , m_ctxt = m_ctxt
+                    , m_pats = []
+                    , m_grhss = GRHSs
+                        { grhssExt = GHC.emptyComments
+                        , grhssGRHSs = [L noSrcSpanA $ GRHS noAnn [] outer_expr]
+                        , grhssLocalBinds = EmptyLocalBinds GHC.NoExtField
+                        }
+                    }
+                -- the original function transformed into a lambda (\cases)
+                theLam = L noSrcSpanA $ HsLamCase noAnn GHC.LamCases orig_mg
+                -- lamN applied to the lam, used in outer_match above
+                outer_expr =
+                    L noSrcSpanA $
+                        HsApp noAnn (mkLamN lamName composeRdrName arity) (hsPar noSrcSpanA theLam)
+            if arity >= 1 then
+                Rewrite $ orig_bind { GHC.fun_matches = outer_matches }
+            else
+                NoRewrite
+#endif
+transformRebindableAbstractionBind _ _ = NoRewrite
 
 -------------------------------------------------------------------------------
 -- Constructors
@@ -774,13 +936,13 @@ transformConstructors RdrNames {..} (L l (SectionR _ (L lop (HsVar _ (L _ op))) 
   where
     expr n args = hsApps_RDR l
         (hsTyApp_RDR l
-            (L lop (HsVar noExtField (L lop buildName)))
+            (L lop (HsVar noExtField (L (l2l lop) buildName)))
             (HsTyLit noExtField (HsStrTy GHC.NoSourceText (Plugins.occNameFS (GHC.rdrNameOcc n)))))
         [ args' ]
       where
         args' = case args of
             [x] -> x
-            _   -> L l (ExplicitTuple noExtField [ L l' (Present noExtField x) | x@(L l' _) <- args ] Plugins.Boxed)
+            _   -> L l (ExplicitTuple noAnn [ Present noAnn x | x <- args ] Plugins.Boxed)
 
 transformConstructors _ _ = NoRewrite
 
@@ -813,37 +975,38 @@ transformRn dflags f = SYB.everywhereM (SYB.mkM transform') where
         go NoRewrite    = return e
         go (Rewrite e') = return e'
         go (Error err)  = do
-            liftIO $ err dflags
+            err dflags
             fail "Error in Overloaded plugin"
         go (WithName kont) = do
-            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") $ locA l
             go (kont n)
 
 transformPs
     :: GHC.DynFlags
     -> (LHsExpr GhcPs -> Rewrite (LHsExpr GhcPs))
-#if MIN_VERSION_ghc(9,0,0)
+    -> (GHC.HsBind GhcPs -> Rewrite (GHC.HsBind GhcPs))
     -> Located HsModule
     -> Plugins.Hsc (Located HsModule)
-#else
-    -> Located (HsModule GhcPs)
-    -> Plugins.Hsc (Located (HsModule GhcPs))
-#endif
-transformPs dflags f = SYB.everywhereM (SYB.mkM transform') where
-    transform' :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
-    transform' e@(L _l _) = do
+transformPs dflags fExpr fBind hsmod =
+    SYB.everywhereM (SYB.mkM transformBind)
+        =<< SYB.everywhereM (SYB.mkM transformExpr) hsmod
+    where
+    transformExpr :: LHsExpr GhcPs -> Plugins.Hsc (LHsExpr GhcPs)
+    transformExpr e@(L _l _) = do
         -- liftIO $ GHC.putLogMsg _dflags GHC.NoReason GHC.SevWarning _l (GHC.defaultErrStyle _dflags) $
         --     GHC.text "Expr" GHC.<+> GHC.ppr e GHC.<+> GHC.text (SYB.gshow e)
-        go (f e)
-      where
-        go NoRewrite    = return e
-        go (Rewrite e') = return e'
-        go (Error err)  = do
-            liftIO $ err dflags
-            -- Hsc doesn't have MonadFail instance
-            liftIO $ throwIO $ userError "Error in Overloaded plugin"
-        go (WithName _kont) = do
-            liftIO $ throwIO $ userError "Error in Overloaded plugin: WithName in Ps transform"
+        rewrite (fExpr e) e
+    transformBind :: GHC.HsBind GhcPs -> Plugins.Hsc (GHC.HsBind GhcPs)
+    transformBind b = rewrite (fBind b) b
+    rewrite ::  Rewrite a -> a -> Plugins.Hsc a
+    rewrite NoRewrite e   = return e
+    rewrite (Rewrite e') _ = return e'
+    rewrite (Error err) _ = do
+        err dflags
+        -- Hsc doesn't have MonadFail instance
+        liftIO $ throwIO $ userError "Error in Overloaded plugin"
+    rewrite (WithName _kont) _ = do
+        liftIO $ throwIO $ userError "Error in Overloaded plugin: WithName in Ps transform"
 
 transformType
     :: GHC.DynFlags
@@ -857,8 +1020,8 @@ transformType dflags f = SYB.everywhereM (SYB.mkM transform') where
         go NoRewrite    = return e
         go (Rewrite e') = return e'
         go (Error err)  = do
-            liftIO $ err dflags
+            err dflags
             fail "Error in Overloaded plugin"
         go (WithName kont) = do
-            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") l
+            n <- GHC.newNameAt (GHC.mkVarOcc "olSplice") $ locA l
             go (kont n)

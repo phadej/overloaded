@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 module Overloaded.Plugin.IdiomBrackets where
 
@@ -13,7 +14,11 @@ transformIdiomBrackets
     :: Names
     -> LHsExpr GhcRn
     -> Rewrite (LHsExpr GhcRn)
+#if MIN_VERSION_ghc(9,4,0)
+transformIdiomBrackets names (L _l (HsUntypedBracket _ (ExpBr _ e)))
+#else
 transformIdiomBrackets names (L _l (HsRnBracketOut _ (ExpBr _ e) _))
+#endif
     = Rewrite (transformIdiomBrackets' names e)
 transformIdiomBrackets _ _ = NoRewrite
 
@@ -38,7 +43,7 @@ transformIdiomBrackets' names expr = do
 -- | Match nested function applications, 'HsApp':
 -- f x y z ~> f :| [x,y,z]
 --
-matchApp :: LHsExpr p -> NonEmpty (LHsExpr p)
+matchApp :: LHsExpr GhcRn -> NonEmpty (LHsExpr GhcRn)
 matchApp (L _ (HsApp _ f x)) = neSnoc (matchApp f) x
 matchApp e = pure e
 
@@ -51,7 +56,7 @@ neSnoc (x :| xs) y = x :| xs ++ [y]
 
 -- | Match nested operator applications, 'OpApp'.
 -- x + y * z ~>  Branch (+) (Leaf x) (Branch (*) (Leaf y) (Leaf z))
-matchOp :: LHsExpr p -> BT (LHsExpr p)
+matchOp :: LHsExpr GhcRn -> BT (LHsExpr GhcRn)
 matchOp (L _ (OpApp _  lhs op rhs)) = Branch (matchOp lhs) op (matchOp rhs)
 matchOp x = Leaf x
 
@@ -70,22 +75,26 @@ idiomBT names (Branch lhs op rhs) = fmapExpr names op (idiomBT names lhs) `ap` i
 -------------------------------------------------------------------------------
 
 applyExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
+#if MIN_VERSION_ghc(9,4,0)
+applyExpr names f (L _ (HsPar _ _ (L _ (HsApp _ (L _ (HsVar _ (L _ voidName'))) x)) _))
+#else
 applyExpr names f (L _ (HsPar _ (L _ (HsApp _ (L _ (HsVar _ (L _ voidName'))) x))))
+#endif
     | voidName' == voidName names = birdExpr names f x
 applyExpr names f x               = apExpr names f x
 
 apExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 apExpr Names {..} f x = hsApps l' (hsVar l' apName) [f, x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA
 
 birdExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 birdExpr Names {..} f x = hsApps l' (hsVar l' birdName) [f, x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA
 
 fmapExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn -> LHsExpr GhcRn
 fmapExpr Names {..} f x = hsApps l' (hsVar l' fmapName) [f, x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA
 
 pureExpr :: Names -> LHsExpr GhcRn -> LHsExpr GhcRn
 pureExpr Names {..} x = hsApps l' (hsVar l' pureName) [x] where
-    l' = noSrcSpan
+    l' = noSrcSpanA

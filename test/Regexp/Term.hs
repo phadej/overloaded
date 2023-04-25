@@ -48,8 +48,8 @@ parseGo
     -> [Char]      -- ^ input
     -> Result
 parseGo ES alt app    []         = Right (mkAlt' (mkApp' app : alt))
-parseGo s  alt app    []         = Left (show $ "Non-empty stack at end-of-input " ++ show s)
-parseGo s  alt []     ('*' : cs) = Left (show "Unattached star")
+parseGo s  _alt _app    []       = Left (show $ "Non-empty stack at end-of-input " ++ show s)
+parseGo _s _alt []   ('*' : _cs) = Left (show "Unattached star")
 parseGo s  alt (x:xs) ('*' : cs) = parseGo s alt (mkStr x : xs) cs
 parseGo s  alt app    ('|' : cs) = parseGo s (mkApp' app : alt) [] cs
 parseGo s  alt app    ('(' : cs) = parseGo (Push alt app s) [] [] cs
@@ -57,7 +57,7 @@ parseGo s  alt app    (')' : cs) = case s of
     ES                -> Left (show $ "Unmatched ) before " ++ cs)
     Push altP appP sP -> parseGo sP altP (mkAlt' (mkApp' app : alt) : appP) cs
 parseGo s  alt app    ('[' : cs) = parseChr s alt app [] cs
-parseGo s  alt app    (']' : cs) = Left ("Unmatched ] before " ++ cs)
+parseGo _s _alt _app  (']' : cs) = Left ("Unmatched ] before " ++ cs)
 parseGo s  alt app    (c   : cs) = parseGo s alt (Chr [c] : app) cs
 
 parseChr
@@ -67,7 +67,7 @@ parseChr
     -> [Char]      -- ^ characters accumulator
     -> [Char]      -- ^ input
     -> Result
-parseChr s alt app acc []                  = Left "Non-terminated character set at end-of-input"
+parseChr _s _alt _app _acc []              = Left "Non-terminated character set at end-of-input"
 parseChr s alt app acc (']' : cs)          = parseGo s alt (Chr acc : app) cs
 parseChr s alt app acc (c : '-' : c' : cs) = parseChr s alt app ([c .. c'] ++ acc) cs
 parseChr s alt app acc (c   : cs)          = parseChr s alt app (c : acc) cs
